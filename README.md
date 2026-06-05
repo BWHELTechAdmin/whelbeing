@@ -1,39 +1,53 @@
 # Whelbeing
 
-A women's wellbeing and health app built with Flutter, featuring a beautiful lavender and white color scheme.
+A women's wellbeing and health app built with Flutter, featuring a dark gold luxury aesthetic. Backed by Supabase with an AI-powered health assistant.
 
 ## Features
 
-- **Learn**: Educational resources covering mental health, physical wellness, reproductive health, and sleep
-- **Connect**: Community features with support groups and discussion forums
-- **Track**: Comprehensive health tracking including cycle tracking, daily logs, and health metrics
-- **Profile**: User profile with statistics, settings, and account management
+- **Learn**: Curated educational articles across mental health, physical wellness, reproductive health, and sleep — with read history tracked locally
+- **Home**: Personalised welcome dashboard with streak tracking and AI health assistant (symptom navigator, appointment prep, lab interpreter, care gap analysis)
+- **Track**: Log and review health visits, lab results, and symptoms
 
-## Design
+## Tech Stack
 
-- Lavender and white color scheme for a calming, wellness-focused aesthetic
-- Floating bottom navigation bar with smooth transitions
-- Modern Material Design 3 components
-- Intuitive and user-friendly interface
+- **Framework**: Flutter (Dart)
+- **Backend**: Supabase (Postgres, Auth, Edge Functions)
+- **State management**: Riverpod
+- **Authentication**: Google Sign-In and Sign in with Apple
+- **AI**: OpenAI GPT-4o via Supabase Edge Function (`supabase/functions/ai-chat/`)
+- **Local persistence**: SharedPreferences (read history)
 
 ## Getting Started
 
-To run this app:
+```sh
+# Install dependencies
+flutter pub get
 
-```fish
+# Run against production Supabase
 flutter run
-```
 
-To run tests:
+# Run against a local Supabase instance
+flutter run \
+  --dart-define=SUPABASE_URL=http://127.0.0.1:54321 \
+  --dart-define=SUPABASE_ANON_KEY=<key from `supabase status`>
 
-```fish
+# Run tests
 flutter test
+
+# Static analysis
+flutter analyze
+
+# Start local Supabase (requires Docker)
+supabase start
 ```
 
 ## Color Palette
 
-- Primary: `#B4A7D6` (Medium Lavender)
-- Secondary: `#D8BFD8` (Thistle)
-- Accent: `#E6E6FA` (Lavender)
-- Dark: `#6B5B95` (Deep Lavender)
-- Background: `#FFFFFF` (White)
+| Role            | Hex       |
+|-----------------|-----------|
+| Primary gold    | `#C9A96E` |
+| Dark gold       | `#6B5220` |
+| Warm text/cream | `#E8DCC8` |
+| Surface         | `#1A1A1A` |
+| Background      | `#0D0D0D` |
+| Border/divider  | `#2A2520` |
