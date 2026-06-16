@@ -205,22 +205,22 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     ),
 
                     // Forgot password — sign-in mode only
-                    if (!_isSignUp) ...[
-                      SizedBox(height: 1.5 * vh),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: GestureDetector(
-                          onTap: () {/* TODO: forgot password */},
-                          child: Text(
-                            'Forgot password?',
-                            style: TextStyle(
-                              fontSize: 3.0 * vw,
-                              color: const Color(0xFF6A5A4A),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    // if (!_isSignUp) ...[
+                    //   SizedBox(height: 1.5 * vh),
+                    //   Align(
+                    //     alignment: Alignment.centerRight,
+                    //     child: GestureDetector(
+                    //       onTap: () {/* TODO: forgot password */},
+                    //       child: Text(
+                    //         'Forgot password?',
+                    //         style: TextStyle(
+                    //           fontSize: 3.0 * vw,
+                    //           color: const Color(0xFF6A5A4A),
+                    //         ),
+                    //       ),
+                    //     ),
+                    //   ),
+                    // ],
                     SizedBox(height: 3 * vh),
 
                     // Email submit button
@@ -234,47 +234,47 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     ),
                     SizedBox(height: 4 * vh),
 
-                    // Divider
-                    _OrDivider(vw: vw),
-                    SizedBox(height: 4 * vh),
+                    // // Divider
+                    // _OrDivider(vw: vw),
+                    // SizedBox(height: 4 * vh),
 
-                    // Google OAuth
-                    _AuthButton(
-                      label: 'Continue with Google',
-                      iconWidget: Text(
-                        'G',
-                        style: TextStyle(
-                          fontSize: 5 * vw,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF4285F4),
-                        ),
-                      ),
-                      loading: state.loadingGoogle,
-                      disabled: state.isLoading,
-                      onTap: notifier.signInWithGoogle,
-                      vh: vh,
-                      vw: vw,
-                    ),
+                    // // Google OAuth
+                    // _AuthButton(
+                    //   label: 'Continue with Google',
+                    //   iconWidget: Text(
+                    //     'G',
+                    //     style: TextStyle(
+                    //       fontSize: 5 * vw,
+                    //       fontWeight: FontWeight.w700,
+                    //       color: const Color(0xFF4285F4),
+                    //     ),
+                    //   ),
+                    //   loading: state.loadingGoogle,
+                    //   disabled: state.isLoading,
+                    //   onTap: notifier.signInWithGoogle,
+                    //   vh: vh,
+                    //   vw: vw,
+                    // ),
 
-                    // Apple OAuth — iOS only
-                    if (Platform.isIOS) ...[
-                      SizedBox(height: 1.5 * vh),
-                      _AuthButton(
-                        label: 'Continue with Apple',
-                        iconWidget: Text(
-                          '\uF8FF',
-                          style: TextStyle(
-                            fontSize: 5.5 * vw,
-                            color: const Color(0xFFE8DCC8),
-                          ),
-                        ),
-                        loading: state.loadingApple,
-                        disabled: state.isLoading,
-                        onTap: notifier.signInWithApple,
-                        vh: vh,
-                        vw: vw,
-                      ),
-                    ],
+                    // // Apple OAuth — iOS only
+                    // if (Platform.isIOS) ...[
+                    //   SizedBox(height: 1.5 * vh),
+                    //   _AuthButton(
+                    //     label: 'Continue with Apple',
+                    //     iconWidget: Text(
+                    //       '\uF8FF',
+                    //       style: TextStyle(
+                    //         fontSize: 5.5 * vw,
+                    //         color: const Color(0xFFE8DCC8),
+                    //       ),
+                    //     ),
+                    //     loading: state.loadingApple,
+                    //     disabled: state.isLoading,
+                    //     onTap: notifier.signInWithApple,
+                    //     vh: vh,
+                    //     vw: vw,
+                    //   ),
+                    // ],
                     SizedBox(height: 4 * vh),
 
                     // Sign-in / sign-up toggle

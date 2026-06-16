@@ -1085,61 +1085,61 @@ class _SignUpPageState extends ConsumerState<_SignUpPage> {
             SizedBox(height: 4 * vh),
 
             // ── Divider ────────────────────────────────────────────────────
-            Row(
-              children: [
-                const Expanded(
-                    child: Divider(color: Color(0xFF1E1E1A), height: 1)),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 3 * vw),
-                  child: Text(
-                    'or',
-                    style: TextStyle(
-                        fontSize: 3.0 * vw,
-                        color: const Color(0xFF3A3028)),
-                  ),
-                ),
-                const Expanded(
-                    child: Divider(color: Color(0xFF1E1E1A), height: 1)),
-              ],
-            ),
-            SizedBox(height: 4 * vh),
+            // Row(
+            //   children: [
+            //     const Expanded(
+            //         child: Divider(color: Color(0xFF1E1E1A), height: 1)),
+            //     Padding(
+            //       padding: EdgeInsets.symmetric(horizontal: 3 * vw),
+            //       child: Text(
+            //         'or',
+            //         style: TextStyle(
+            //             fontSize: 3.0 * vw,
+            //             color: const Color(0xFF3A3028)),
+            //       ),
+            //     ),
+            //     const Expanded(
+            //         child: Divider(color: Color(0xFF1E1E1A), height: 1)),
+            //   ],
+            // ),
+            // SizedBox(height: 4 * vh),
 
-            // ── Google ────────────────────────────────────────────────────
-            _OBOAuthButton(
-              label: 'Sign up with Google',
-              icon: Text(
-                'G',
-                style: TextStyle(
-                  fontSize: 5 * vw,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF4285F4),
-                ),
-              ),
-              loading: state.loadingGoogle,
-              disabled: state.isLoading,
-              onTap: notifier.signInWithGoogle,
-              vh: vh,
-              vw: vw,
-            ),
+            // // ── Google ────────────────────────────────────────────────────
+            // _OBOAuthButton(
+            //   label: 'Sign up with Google',
+            //   icon: Text(
+            //     'G',
+            //     style: TextStyle(
+            //       fontSize: 5 * vw,
+            //       fontWeight: FontWeight.w700,
+            //       color: const Color(0xFF4285F4),
+            //     ),
+            //   ),
+            //   loading: state.loadingGoogle,
+            //   disabled: state.isLoading,
+            //   onTap: notifier.signInWithGoogle,
+            //   vh: vh,
+            //   vw: vw,
+            // ),
 
-            // ── Apple (iOS only) ─────────────────────────────────────────────
-            if (Platform.isIOS) ...[
-              SizedBox(height: 1.5 * vh),
-              _OBOAuthButton(
-                label: 'Sign up with Apple',
-                icon: Text(
-                  '\uF8FF',
-                  style: TextStyle(
-                      fontSize: 5.5 * vw, color: const Color(0xFFE8DCC8)),
-                ),
-                loading: state.loadingApple,
-                disabled: state.isLoading,
-                onTap: notifier.signInWithApple,
-                vh: vh,
-                vw: vw,
-              ),
-            ],
-            SizedBox(height: 4 * vh),
+            // // ── Apple (iOS only) ─────────────────────────────────────────────
+            // if (Platform.isIOS) ...[
+            //   SizedBox(height: 1.5 * vh),
+            //   _OBOAuthButton(
+            //     label: 'Sign up with Apple',
+            //     icon: Text(
+            //       '\uF8FF',
+            //       style: TextStyle(
+            //           fontSize: 5.5 * vw, color: const Color(0xFFE8DCC8)),
+            //     ),
+            //     loading: state.loadingApple,
+            //     disabled: state.isLoading,
+            //     onTap: notifier.signInWithApple,
+            //     vh: vh,
+            //     vw: vw,
+            //   ),
+            // ],
+            // SizedBox(height: 4 * vh),
                 ],
               ),
             ),
