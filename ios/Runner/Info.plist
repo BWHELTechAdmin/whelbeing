@@ -49,6 +49,8 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Authenticate to access Whelbeing.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose a photo to use as your profile picture.</string>
 	<key>NSCameraUsageDescription</key>

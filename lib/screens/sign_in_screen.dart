@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/sign_in_provider.dart';
 import '../utils/size_config.dart';
 import '../utils/validators.dart';
+import '../widgets/password_requirements.dart';
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -203,6 +204,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                         ),
                       ),
                     ),
+
+                    // Password requirements — sign-up only
+                    if (_isSignUp) ...[
+                      SizedBox(height: 1.5 * vh),
+                      PasswordRequirementsChecklist(
+                        controller: _passwordController,
+                        vw: vw,
+                        vh: vh,
+                      ),
+                    ],
 
                     // Forgot password — sign-in mode only
                     // if (!_isSignUp) ...[

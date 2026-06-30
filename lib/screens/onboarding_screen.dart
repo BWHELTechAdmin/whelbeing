@@ -7,6 +7,7 @@ import '../providers/sign_in_provider.dart';
 import '../repositories/profile_repository.dart';
 import '../utils/size_config.dart';
 import '../utils/validators.dart';
+import '../widgets/password_requirements.dart';
 import 'sign_in_screen.dart';
 
 // ─── Data model ──────────────────────────────────────────────────────────────
@@ -1021,6 +1022,12 @@ class _SignUpPageState extends ConsumerState<_SignUpPage> {
                   ),
                 ),
               ),
+            ),
+            SizedBox(height: 1.5 * vh),
+            PasswordRequirementsChecklist(
+              controller: _passwordController,
+              vw: vw,
+              vh: vh,
             ),
             SizedBox(height: 3 * vh),
 

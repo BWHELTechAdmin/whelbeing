@@ -10,7 +10,6 @@ class PrivacyScreen extends StatefulWidget {
 
 class _PrivacyScreenState extends State<PrivacyScreen> {
   bool _biometricLock = false;
-  bool _hideProfile = false;
   bool _analyticsSharing = true;
   bool _crashReports = true;
 
@@ -49,21 +48,6 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                   ),
                 );
               },
-            ),
-          ]),
-          _buildSection('Privacy', [
-            _buildToggle(
-              'Hide Profile from Community',
-              'Your posts will appear as Anonymous',
-              Icons.visibility_off_outlined,
-              _hideProfile,
-              (v) => setState(() => _hideProfile = v),
-            ),
-            _buildActionTile(
-              'Blocked Users',
-              'Manage your blocked user list',
-              Icons.block,
-              () {},
             ),
           ]),
           _buildSection('Data', [

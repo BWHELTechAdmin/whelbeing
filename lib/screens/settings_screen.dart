@@ -1,16 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/biometric_provider.dart';
+import '../services/biometric_service.dart';
 import '../utils/size_config.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _darkMode = false;
   bool _pushNotifications = true;
+  bool _biometricAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometricAvailability();
+  }
+
+  Future<void> _checkBiometricAvailability() async {
+    final available = await BiometricService.isAvailable();
+    if (mounted) setState(() => _biometricAvailable = available);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +53,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _pushNotifications,
               (v) => setState(() => _pushNotifications = v),
             ),
+          ]),
+          _buildSection('Security', [
+            _buildBiometricToggle(),
           ]),
           _buildSection('Data', [
             _buildTile('Export Data', Icons.download_outlined, () {
@@ -121,6 +139,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ]),
         ],
       ),
+    );
+  }
+
+  Widget _buildBiometricToggle() {
+    final enabled = ref.watch(biometricEnabledProvider);
+    return SwitchListTile(
+      secondary: Icon(
+        Icons.fingerprint,
+        color: _biometricAvailable
+            ? const Color(0xFFC9A96E)
+            : Colors.grey,
+      ),
+      title: const Text(
+        'Biometric Authentication',
+        style: TextStyle(fontSize: 15),
+      ),
+      subtitle: Text(
+        _biometricAvailable
+            ? 'Lock the app when you leave and return'
+            : 'Not available on this device',
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[500],
+        ),
+      ),
+      value: enabled && _biometricAvailable,
+      activeThumbColor: const Color(0xFFC9A96E),
+      onChanged: _biometricAvailable
+          ? (v) async {
+              if (v) {
+                // Verify auth once before enabling, so we know it works.
+                final success = await BiometricService.authenticate();
+                if (!success) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Authentication failed. Biometric lock not enabled.'),
+                        backgroundColor: Color(0xFF2A2520),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                  return;
+                }
+              }
+              await ref
+                  .read(biometricEnabledProvider.notifier)
+                  .setEnabled(v);
+            }
+          : null,
     );
   }
 

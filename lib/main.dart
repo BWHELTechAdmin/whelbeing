@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/learn_screen.dart';
 import 'utils/size_config.dart';
@@ -9,9 +10,11 @@ import 'screens/track_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'config/supabase_config.dart';
 import 'providers/auth_provider.dart';
+import 'providers/biometric_provider.dart';
 import 'providers/health_record_provider.dart';
 import 'providers/onboarding_provider.dart';
 import 'repositories/auth_repository.dart';
+import 'services/biometric_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,7 +26,13 @@ Future<void> main() async {
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
-  runApp(const ProviderScope(child: WhelbeingApp()));
+  // Load SharedPreferences eagerly so biometricEnabledProvider initialises
+  // synchronously and the lock screen can show before the first frame.
+  final prefs = await SharedPreferences.getInstance();
+  runApp(ProviderScope(
+    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    child: const WhelbeingApp(),
+  ));
 }
 
 class WhelbeingApp extends StatelessWidget {
@@ -102,7 +111,7 @@ class _AppEntry extends ConsumerWidget {
     //   (b) Just finished — local flag set this session (covers both
     //       authenticated users and users who skip sign-in entirely).
     if ((isAuthenticated && persistedComplete) || localComplete) {
-      return const MainNavigation();
+      return const _BiometricGuard();
     }
 
     return HealthProfileOnboarding(
@@ -120,6 +129,177 @@ class _AppEntry extends ConsumerWidget {
           ref.read(onboardingCompleteProvider.notifier).state = true;
         },
       );
+  }
+}
+
+// ─── Biometric guard ─────────────────────────────────────────────────────────
+
+/// Wraps [MainNavigation] with biometric authentication.
+///
+/// When biometric lock is enabled in settings:
+/// - Locks immediately on first mount (app opened with existing session).
+/// - Locks whenever the app returns from background (paused → resumed).
+///
+/// The lock screen prompts biometrics automatically and exposes a "Try Again"
+/// button for retry after cancellation or failure.
+class _BiometricGuard extends ConsumerStatefulWidget {
+  const _BiometricGuard();
+
+  @override
+  ConsumerState<_BiometricGuard> createState() => _BiometricGuardState();
+}
+
+class _BiometricGuardState extends ConsumerState<_BiometricGuard>
+    with WidgetsBindingObserver {
+  bool _isLocked = false;
+  bool _isAuthenticating = false;
+  bool _wentToBackground = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Defer so the widget tree is fully built before we push the lock.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _lockIfEnabled());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.paused) {
+      _wentToBackground = true;
+    } else if (state == AppLifecycleState.resumed && _wentToBackground) {
+      _wentToBackground = false;
+      _lockIfEnabled();
+    }
+  }
+
+  /// Locks the screen and triggers authentication if biometric is enabled.
+  Future<void> _lockIfEnabled() async {
+    if (!ref.read(biometricEnabledProvider)) return;
+    if (!mounted) return;
+    setState(() => _isLocked = true);
+    await _authenticate();
+  }
+
+  /// Runs the biometric prompt. Unlocks on success; keeps locked on failure
+  /// so the user can retry via the lock screen button.
+  Future<void> _authenticate() async {
+    if (_isAuthenticating || !mounted) return;
+    setState(() => _isAuthenticating = true);
+    final success = await BiometricService.authenticate();
+    if (!mounted) return;
+    setState(() {
+      _isAuthenticating = false;
+      if (success) _isLocked = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLocked) {
+      return _BiometricLockScreen(
+        onRetry: _authenticate,
+        isAuthenticating: _isAuthenticating,
+      );
+    }
+    return const MainNavigation();
+  }
+}
+
+/// Full-screen lock overlay shown when biometric authentication is required.
+class _BiometricLockScreen extends StatelessWidget {
+  const _BiometricLockScreen({
+    required this.onRetry,
+    required this.isAuthenticating,
+  });
+
+  final VoidCallback onRetry;
+  final bool isAuthenticating;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D0D),
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1A1A),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFFC9A96E).withValues(alpha: 0.4),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.fingerprint,
+                    size: 44,
+                    color: Color(0xFFC9A96E),
+                  ),
+                ),
+                const SizedBox(height: 28),
+                const Text(
+                  'Authentication Required',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFE8DCC8),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Use your biometrics or device passcode\nto access Whelbeing',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 40),
+                if (isAuthenticating)
+                  const SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Color(0xFFC9A96E),
+                    ),
+                  )
+                else
+                  FilledButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.fingerprint, size: 20),
+                    label: const Text('Try Again'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFC9A96E),
+                      foregroundColor: const Color(0xFF0D0D0D),
+                      minimumSize: const Size(180, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

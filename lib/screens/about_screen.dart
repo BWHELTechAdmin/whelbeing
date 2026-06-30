@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../utils/size_config.dart';
 
 class AboutScreen extends StatelessWidget {
@@ -135,11 +136,11 @@ class AboutScreen extends StatelessWidget {
               ),
             ),
             SizedBox(height: 1.5 * vh),
-            _buildLinkTile(context, 'Terms of Service', Icons.description_outlined),
+            _buildLinkTile(context, 'Terms of Service', Icons.description_outlined,
+                url: 'http://bwhel.com/termsofservice'),
             SizedBox(height: 1.0 * vh),
-            _buildLinkTile(context, 'Privacy Policy', Icons.privacy_tip_outlined),
-            SizedBox(height: 1.0 * vh),
-            _buildLinkTile(context, 'Open Source Licenses', Icons.code),
+            _buildLinkTile(context, 'Privacy Policy', Icons.privacy_tip_outlined,
+                url: 'http://bwhel.com/privacypolicy'),
             SizedBox(height: 3.8 * vh),
             Text(
               'Made with ♥ for women everywhere',
@@ -212,17 +213,25 @@ class AboutScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLinkTile(BuildContext context, String title, IconData icon) {
+  Widget _buildLinkTile(BuildContext context, String title, IconData icon,
+      {String? url}) {
     final vw = SizeConfig.vw;
     return GestureDetector(
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$title will open in your browser'),
-            backgroundColor: const Color(0xFFC9A96E),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      onTap: () async {
+        if (url != null) {
+          final uri = Uri.parse(url);
+          if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Could not open $title'),
+                  backgroundColor: const Color(0xFFC9A96E),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          }
+        }
       },
       child: Container(
         padding: EdgeInsets.all(3.5 * vw),

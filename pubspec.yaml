@@ -47,11 +47,17 @@ dependencies:
   # Local persistence
   shared_preferences: ^2.3.2
 
+  # Biometric authentication
+  local_auth: ^2.3.0
+
   # Markdown rendering
   flutter_markdown_plus: ^1.0.7
 
   # Media
   image_picker: ^1.1.2
+
+  # URL launching
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

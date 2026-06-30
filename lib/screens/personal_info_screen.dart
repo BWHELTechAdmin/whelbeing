@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/user_model.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/user_provider.dart';
@@ -19,6 +20,7 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
   bool _isEditing = false;
   bool _isSaving = false;
   bool _initialized = false;
+  bool _uploadingAvatar = false;
 
   @override
   void dispose() {
@@ -79,6 +81,32 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
       _save();
     } else {
       setState(() => _isEditing = true);
+    }
+  }
+
+  Future<void> _pickAndUploadAvatar() async {
+    final picker = ImagePicker();
+    final XFile? xFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1024,
+      maxHeight: 1024,
+    );
+    if (xFile == null || !mounted) return;
+    setState(() => _uploadingAvatar = true);
+    try {
+      final bytes = await xFile.readAsBytes();
+      await ref.read(userRepositoryProvider).uploadAvatar(bytes);
+      ref.invalidate(currentUserModelProvider);
+      ref.invalidate(avatarUrlProvider);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update profile photo.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
     }
   }
 
@@ -185,42 +213,73 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
           children: [
             SizedBox(height: 1.0 * vh),
             Center(
-              child: Stack(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(1.0 * vw),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF2A2520),
-                      shape: BoxShape.circle,
-                    ),
-                    child: CircleAvatar(
-                      radius: 12.0 * vw,
-                      backgroundColor: const Color(0xFF1A1A1A),
-                      child: Icon(
-                        Icons.person,
-                        size: 12.0 * vw,
-                        color: const Color(0xFFE8DCC8),
+              child: GestureDetector(
+                onTap: _isEditing ? _pickAndUploadAvatar : null,
+                child: Stack(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(1.0 * vw),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF2A2520),
+                        shape: BoxShape.circle,
                       ),
+                      child: Builder(builder: (context) {
+                        final avatarUrl =
+                            ref.watch(avatarUrlProvider).valueOrNull;
+                        return CircleAvatar(
+                          radius: 12.0 * vw,
+                          backgroundColor: const Color(0xFF1A1A1A),
+                          backgroundImage: avatarUrl != null
+                              ? NetworkImage(avatarUrl)
+                              : null,
+                          child: avatarUrl == null
+                              ? Icon(
+                                  Icons.person,
+                                  size: 12.0 * vw,
+                                  color: const Color(0xFFE8DCC8),
+                                )
+                              : null,
+                        );
+                      }),
                     ),
-                  ),
-                  if (_isEditing)
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        padding: EdgeInsets.all(1.5 * vw),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFC9A96E),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.camera_alt,
-                          color: const Color(0xFF1A1A1A),
-                          size: 4.5 * vw,
+                    if (_uploadingAvatar)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Color(0xFFC9A96E),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                    if (_isEditing)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: EdgeInsets.all(1.5 * vw),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFC9A96E),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.camera_alt,
+                            color: const Color(0xFF1A1A1A),
+                            size: 4.5 * vw,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             SizedBox(height: 3.8 * vh),
