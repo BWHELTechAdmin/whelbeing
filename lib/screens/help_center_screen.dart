@@ -23,51 +23,21 @@ class HelpCenterScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Search-like header
             GoldShimmerContainer(
               padding: EdgeInsets.all(4.0 * vw),
               borderRadius: BorderRadius.circular(4.0 * vw),
-              child: Column(
-                children: [
-                  const Text(
-                    'How can we help?',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+              child: const Center(
+                child: Text(
+                  'How can we help?',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
-                  SizedBox(height: 1.5 * vh),
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 4.0 * vw),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A1A),
-                      borderRadius: BorderRadius.circular(6.0 * vw),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.search, color: Colors.grey[400]),
-                        SizedBox(width: 2.0 * vw),
-                        Expanded(
-                          child: TextField(
-                            decoration: InputDecoration(
-                              hintText: 'Search for help...',
-                              hintStyle: TextStyle(
-                                color: Colors.grey[400],
-                                fontSize: 14,
-                              ),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
             SizedBox(height: 2.8 * vh),
-            // Quick actions
             const Text(
               'Contact Us',
               style: TextStyle(
@@ -86,14 +56,6 @@ class HelpCenterScreen extends StatelessWidget {
                     Icons.email_outlined,
                   ),
                 ),
-                SizedBox(width: 3.0 * vw),
-                Expanded(
-                  child: _buildContactCard(
-                    context,
-                    'Live Chat',
-                    Icons.chat_outlined,
-                  ),
-                ),
               ],
             ),
             SizedBox(height: 2.8 * vh),
@@ -107,18 +69,6 @@ class HelpCenterScreen extends StatelessWidget {
             ),
             SizedBox(height: 1.5 * vh),
             _buildFaqItem(
-              'How do I track my cycle?',
-              'Go to the Track tab and tap the cycle tracker at the top. '
-                  'You can log your period start and end dates, and the app will '
-                  'learn your patterns over time to provide predictions.',
-            ),
-            _buildFaqItem(
-              'How accurate are the cycle predictions?',
-              'Predictions improve with more data. After 3 or more logged cycles, '
-                  'predictions become quite accurate. Remember that stress, travel, '
-                  'and lifestyle changes can affect your cycle.',
-            ),
-            _buildFaqItem(
               'Can I export my health data?',
               'Yes! Go to Profile > Settings and tap "Export Data". You\'ll '
                   'receive a file with all your logged health data that you can '
@@ -129,12 +79,6 @@ class HelpCenterScreen extends StatelessWidget {
               'Absolutely. Your health data is encrypted and stored securely. '
                   'We never share your personal health information with third parties. '
                   'You can review our full privacy policy in Settings.',
-            ),
-            _buildFaqItem(
-              'How do I join a community group?',
-              'Navigate to the Connect tab and browse available Support Groups. '
-                  'Tap on any group to see discussions and start participating. '
-                  'You can also create your own posts.',
             ),
             _buildFaqItem(
               'How do I delete my account?',
