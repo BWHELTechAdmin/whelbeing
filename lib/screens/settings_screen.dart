@@ -1,31 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/biometric_provider.dart';
-import '../services/biometric_service.dart'; // for isAvailable() check
+import '../services/biometric_service.dart';
 import '../utils/size_config.dart';
 
-class SettingsScreen extends ConsumerStatefulWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> {
   bool _darkMode = false;
   bool _pushNotifications = true;
-  bool _biometricAvailable = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkBiometricAvailability();
-  }
-
-  Future<void> _checkBiometricAvailability() async {
-    final available = await BiometricService.isAvailable();
-    if (mounted) setState(() => _biometricAvailable = available);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -143,36 +129,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildBiometricToggle() {
-    final enabled = ref.watch(biometricEnabledProvider);
-    return SwitchListTile(
-      secondary: Icon(
-        Icons.fingerprint,
-        color: _biometricAvailable
-            ? const Color(0xFFC9A96E)
-            : Colors.grey,
-      ),
-      title: const Text(
-        'Biometric Authentication',
-        style: TextStyle(fontSize: 15),
-      ),
-      subtitle: Text(
-        _biometricAvailable
-            ? 'Lock the app when you leave and return'
-            : 'Not available on this device',
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[500],
-        ),
-      ),
-      value: enabled,
-      activeThumbColor: const Color(0xFFC9A96E),
-      onChanged: _biometricAvailable
-          ? (v) async {
-              await ref
-                  .read(biometricEnabledProvider.notifier)
-                  .setEnabled(v);
-            }
-          : null,
+    // ValueListenableBuilder ensures the toggle reflects the global
+    // BiometricSettings.notifier regardless of page navigation.
+    return ValueListenableBuilder<bool>(
+      valueListenable: BiometricSettings.notifier,
+      builder: (context, enabled, _) {
+        return SwitchListTile(
+          secondary: const Icon(
+            Icons.fingerprint,
+            color: Color(0xFFC9A96E),
+          ),
+          title: const Text(
+            'Biometric Authentication',
+            style: TextStyle(fontSize: 15),
+          ),
+          subtitle: Text(
+            'Lock the app when you leave and return',
+            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+          ),
+          value: enabled,
+          activeThumbColor: const Color(0xFFC9A96E),
+          onChanged: (v) async {
+            await BiometricSettings.setEnabled(v);
+          },
+        );
+      },
     );
   }
 

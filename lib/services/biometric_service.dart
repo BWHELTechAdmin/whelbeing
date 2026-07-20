@@ -1,4 +1,38 @@
+import 'package:flutter/foundation.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Persists the biometric lock preference in SharedPreferences and exposes
+/// a global [ValueNotifier] so any widget can react to changes without
+/// Riverpod or page-scoped local state.
+///
+/// Call [init] once in [main] before [runApp].
+class BiometricSettings {
+  BiometricSettings._();
+
+  static SharedPreferences? _prefs;
+  static const _key = 'biometric_enabled';
+
+  /// Global reactive state — widgets use [ValueListenableBuilder] on this.
+  static final notifier = ValueNotifier<bool>(false);
+
+  /// Load (or reuse) the SharedPreferences instance and prime [notifier].
+  static Future<void> init() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    notifier.value = _prefs!.getBool(_key) ?? false;
+  }
+
+  /// Whether biometric lock is currently enabled.
+  static bool get enabled => notifier.value;
+
+  /// Persists a new value and updates [notifier] immediately so any
+  /// listening widget rebuilds before the async disk write completes.
+  static Future<void> setEnabled(bool value) async {
+    notifier.value = value;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_key, value);
+  }
+}
 
 /// Thin wrapper around [LocalAuthentication] for biometric checks.
 class BiometricService {

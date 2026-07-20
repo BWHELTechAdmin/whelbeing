@@ -22,6 +22,7 @@ class HomeScreen extends ConsumerWidget {
             .valueOrNull
             ?.displayFirstName ??
         'there';
+    final avatarUrl = ref.watch(avatarUrlProvider).valueOrNull;
     return SafeArea(
       bottom: false,
       child: SingleChildScrollView(
@@ -32,57 +33,75 @@ class HomeScreen extends ConsumerWidget {
               SizedBox(height: 1.0 * vh),
               // Welcome hero section
               GoldShimmerContainer(
-                padding: EdgeInsets.all(6.0 * vw),
+                padding: EdgeInsets.all(5.0 * vw),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Welcome back,',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.white.withValues(alpha: 0.7),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Welcome back,',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                ),
+                              ),
+                              SizedBox(height: 0.3 * vh),
+                              Text(
+                                firstName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const ProfileScreen(),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 3.5 * vw,
-                              vertical: 0.8 * vh,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(5.0 * vw),
-                              border: Border.all(color: const Color(0xFF3D2E14)),
-                            ),
-                            child: const Text(
-                              'Manage Profile & Settings',
-                              style: TextStyle(
-                                fontSize: 12,
+                        SizedBox(width: 4.0 * vw),
+                        Semantics(
+                          label: 'Open profile',
+                          button: true,
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const ProfileScreen(),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              width: 14.0 * vw,
+                              height: 14.0 * vw,
+                              padding: EdgeInsets.all(0.65 * vw),
+                              decoration: const BoxDecoration(
                                 color: Color(0xFFC9A96E),
+                                shape: BoxShape.circle,
+                              ),
+                              child: CircleAvatar(
+                                backgroundColor: const Color(0xFF1E1E1E),
+                                backgroundImage: avatarUrl != null
+                                    ? NetworkImage(avatarUrl)
+                                    : null,
+                                child: avatarUrl == null
+                                    ? Icon(
+                                        Icons.person,
+                                        size: 7.0 * vw,
+                                        color: const Color(0xFFE8DCC8),
+                                      )
+                                    : null,
                               ),
                             ),
                           ),
                         ),
                       ],
-                    ),
-                    SizedBox(height: 0.5 * vh),
-                    Text(
-                      firstName,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
                     ),
                     SizedBox(height: 1.5 * vh),
                     Text(
@@ -91,6 +110,27 @@ class HomeScreen extends ConsumerWidget {
                         fontSize: 14,
                         color: Colors.white.withValues(alpha: 0.6),
                         height: 1.4,
+                      ),
+                    ),
+                    SizedBox(height: 1.4 * vh),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ProfileScreen(),
+                          ),
+                        );
+                      },
+                      icon: Icon(Icons.settings_outlined, size: 4.0 * vw),
+                      label: const Text('Manage Profile & Settings'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFC9A96E),
+                        side: const BorderSide(color: Color(0xFF3D2E14)),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 3.0 * vw,
+                          vertical: 1.0 * vh,
+                        ),
+                        textStyle: const TextStyle(fontSize: 12),
                       ),
                     ),
                   ],

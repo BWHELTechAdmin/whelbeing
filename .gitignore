@@ -47,6 +47,9 @@ migrate_working_dir/
 *.jks
 *.keystore
 android/key.properties
+apks_output/
+app-release.aab
+app-release.apks
 
 # Symbolication related
 app.*.symbols

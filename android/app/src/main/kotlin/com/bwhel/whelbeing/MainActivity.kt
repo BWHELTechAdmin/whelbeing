@@ -1,4 +1,4 @@
-package com.example.whelbeing
+package com.bwhel.whelbeing
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

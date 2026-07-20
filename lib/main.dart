@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/learn_screen.dart';
 import 'utils/size_config.dart';
@@ -10,7 +9,6 @@ import 'screens/track_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'config/supabase_config.dart';
 import 'providers/auth_provider.dart';
-import 'providers/biometric_provider.dart';
 import 'providers/health_record_provider.dart';
 import 'providers/onboarding_provider.dart';
 import 'repositories/auth_repository.dart';
@@ -26,13 +24,10 @@ Future<void> main() async {
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
-  // Load SharedPreferences eagerly so biometricEnabledProvider initialises
-  // synchronously and the lock screen can show before the first frame.
-  final prefs = await SharedPreferences.getInstance();
-  runApp(ProviderScope(
-    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
-    child: const WhelbeingApp(),
-  ));
+  // Load the biometric setting before runApp so _BiometricGuard can read it
+  // synchronously on the first frame without any async gap.
+  await BiometricSettings.init();
+  runApp(const ProviderScope(child: WhelbeingApp()));
 }
 
 class WhelbeingApp extends StatelessWidget {
@@ -142,25 +137,30 @@ class _AppEntry extends ConsumerWidget {
 ///
 /// The lock screen prompts biometrics automatically and exposes a "Try Again"
 /// button for retry after cancellation or failure.
-class _BiometricGuard extends ConsumerStatefulWidget {
+class _BiometricGuard extends StatefulWidget {
   const _BiometricGuard();
 
   @override
-  ConsumerState<_BiometricGuard> createState() => _BiometricGuardState();
+  State<_BiometricGuard> createState() => _BiometricGuardState();
 }
 
-class _BiometricGuardState extends ConsumerState<_BiometricGuard>
+class _BiometricGuardState extends State<_BiometricGuard>
     with WidgetsBindingObserver {
-  bool _isLocked = false;
+  // Initialised synchronously in initState so the very first build already
+  // shows the lock screen — prevents a flash of app content before auth.
+  late bool _isLocked;
   bool _isAuthenticating = false;
   bool _wentToBackground = false;
 
   @override
   void initState() {
     super.initState();
+    _isLocked = BiometricSettings.enabled;
     WidgetsBinding.instance.addObserver(this);
-    // Defer so the widget tree is fully built before we push the lock.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _lockIfEnabled());
+    // Trigger the auth prompt after the lock screen is already visible.
+    if (_isLocked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _authenticate());
+    }
   }
 
   @override
@@ -172,7 +172,9 @@ class _BiometricGuardState extends ConsumerState<_BiometricGuard>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.paused) {
+    // Both paused and hidden mean the app is no longer visible on iOS.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       _wentToBackground = true;
     } else if (state == AppLifecycleState.resumed && _wentToBackground) {
       _wentToBackground = false;
@@ -182,7 +184,7 @@ class _BiometricGuardState extends ConsumerState<_BiometricGuard>
 
   /// Locks the screen and triggers authentication if biometric is enabled.
   Future<void> _lockIfEnabled() async {
-    if (!ref.read(biometricEnabledProvider)) return;
+    if (!BiometricSettings.enabled) return;
     if (!mounted) return;
     setState(() => _isLocked = true);
     await _authenticate();
