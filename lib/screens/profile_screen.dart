@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../providers/ai_conversation_provider.dart';
 import '../providers/user_provider.dart';
+import '../repositories/ai_conversation_repository.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/user_repository.dart';
 import '../widgets/gold_shimmer.dart';
 import '../utils/size_config.dart';
-import 'settings_screen.dart';
 import 'personal_info_screen.dart';
 import 'privacy_screen.dart';
 import 'help_center_screen.dart';
@@ -27,6 +28,8 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _uploading = false;
+  bool _darkMode = false;
+  bool _pushNotifications = true;
 
   @override
   Widget build(BuildContext context) {
@@ -49,19 +52,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const SettingsScreen(),
-                ),
-              );
-            },
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(4.0 * vw),
@@ -76,45 +66,78 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               vh: vh,
             ),
             SizedBox(height: 2.8 * vh),
-            _buildMenuSection(
-              'Account',
-              [
-                _buildMenuItem(
-                  context,
-                  Icons.person_outline,
-                  'Personal Information',
-                  'Update your details',
-                  const PersonalInfoScreen(),
-                ),
-                _buildMenuItem(
-                  context,
-                  Icons.lock_outline,
-                  'Privacy & Security',
-                  'Control your data',
-                  const PrivacyScreen(),
-                ),
-              ],
-            ),
+            _buildMenuSection('Account', [
+              _buildMenuItem(
+                context,
+                Icons.person_outline,
+                'Personal Information',
+                'Update your details',
+                const PersonalInfoScreen(),
+              ),
+              _buildMenuItem(
+                context,
+                Icons.lock_outline,
+                'Privacy & Security',
+                'Control your data',
+                const PrivacyScreen(),
+              ),
+            ]),
             SizedBox(height: 2.0 * vh),
-            _buildMenuSection(
-              'Support',
-              [
-                _buildMenuItem(
-                  context,
-                  Icons.help_outline,
-                  'Help Center',
-                  'Get answers to your questions',
-                  const HelpCenterScreen(),
-                ),
-                _buildMenuItem(
-                  context,
-                  Icons.info_outline,
-                  'About',
-                  'Learn more about Whelbeing',
-                  const AboutScreen(),
-                ),
-              ],
-            ),
+            _buildMenuSection('Preferences', [
+              _buildSettingsToggle(
+                'Dark Mode',
+                Icons.dark_mode_outlined,
+                _darkMode,
+                (value) => setState(() => _darkMode = value),
+              ),
+              _buildSettingsToggle(
+                'Push Notifications',
+                Icons.notifications_outlined,
+                _pushNotifications,
+                (value) => setState(() => _pushNotifications = value),
+              ),
+            ]),
+            SizedBox(height: 2.0 * vh),
+            _buildMenuSection('Data', [
+              _buildSettingsAction(
+                Icons.download_outlined,
+                'Export Data',
+                _confirmExportData,
+              ),
+              _buildSettingsAction(
+                Icons.cached,
+                'Clear Cache',
+                _confirmClearCache,
+              ),
+              _buildSettingsAction(
+                Icons.delete_outline,
+                'Clear AI Conversation History',
+                _confirmClearAiConversationHistory,
+                destructive: true,
+              ),
+            ]),
+            SizedBox(height: 2.0 * vh),
+            _buildMenuSection('App Information', [
+              _buildInfoItem('Version', '1.0.0'),
+              _buildInfoItem('Build', '2026.02'),
+            ]),
+            SizedBox(height: 2.0 * vh),
+            _buildMenuSection('Support', [
+              _buildMenuItem(
+                context,
+                Icons.help_outline,
+                'Help Center',
+                'Get answers to your questions',
+                const HelpCenterScreen(),
+              ),
+              _buildMenuItem(
+                context,
+                Icons.info_outline,
+                'About',
+                'Learn more about Whelbeing',
+                const AboutScreen(),
+              ),
+            ]),
             SizedBox(height: 2.8 * vh),
             Semantics(
               label: 'Log out of your account',
@@ -152,8 +175,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             Navigator.of(ctx).pop();
                             await ref.read(authRepositoryProvider).signOut();
                             if (context.mounted) {
-                              Navigator.of(context)
-                                  .popUntil((route) => route.isFirst);
+                              Navigator.of(
+                                context,
+                              ).popUntil((route) => route.isFirst);
                             }
                           },
                           child: const Text(
@@ -363,8 +387,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
                 SizedBox(height: 1.2 * vh),
                 GestureDetector(
-                  onTap: () =>
-                      _onAvatarTap(hasCustomAvatar: hasCustomAvatar),
+                  onTap: () => _onAvatarTap(hasCustomAvatar: hasCustomAvatar),
                   child: Container(
                     padding: EdgeInsets.symmetric(
                       horizontal: 2.5 * vw,
@@ -416,29 +439,243 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
             borderRadius: BorderRadius.circular(4.0 * vw),
-            border: Border.all(
-              color: const Color(0xFF2A2520),
-            ),
+            border: Border.all(color: const Color(0xFF2A2520)),
           ),
-          child: Column(
-            children: items,
-          ),
+          child: Column(children: items),
         ),
       ],
     );
   }
 
-  Widget _buildMenuItem(BuildContext context, IconData icon, String title,
-      String subtitle, Widget destination) {
+  Widget _buildSettingsToggle(
+    String title,
+    IconData icon,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
+    final vw = SizeConfig.vw;
+    return SwitchListTile(
+      contentPadding: EdgeInsets.symmetric(horizontal: 4.0 * vw),
+      secondary: Icon(icon, color: const Color(0xFFC9A96E), size: 5.0 * vw),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFFE8DCC8),
+        ),
+      ),
+      value: value,
+      activeThumbColor: const Color(0xFFC9A96E),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _buildSettingsAction(
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    bool destructive = false,
+  }) {
+    final vh = SizeConfig.vh;
+    final vw = SizeConfig.vw;
+    final color = destructive
+        ? const Color(0xFFE08080)
+        : const Color(0xFFC9A96E);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 4.0 * vw, vertical: 1.7 * vh),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 5.0 * vw),
+            SizedBox(width: 4.0 * vw),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: destructive ? color : const Color(0xFFE8DCC8),
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: color, size: 4.0 * vw),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoItem(String title, String value) {
+    final vh = SizeConfig.vh;
+    final vw = SizeConfig.vw;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 4.0 * vw, vertical: 1.7 * vh),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFE8DCC8),
+              ),
+            ),
+          ),
+          Text(value, style: TextStyle(fontSize: 14, color: Colors.grey[400])),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmExportData() async {
+    final shouldExport = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Export Data'),
+        content: const Text(
+          'This will generate a file containing all your health data. '
+          'It will be sent to your registered email address.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFFC9A96E)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Export',
+              style: TextStyle(color: Color(0xFFE8DCC8)),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldExport == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Data export started. Check your email shortly.'),
+          backgroundColor: Color(0xFFC9A96E),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmClearCache() async {
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear Cache'),
+        content: const Text(
+          'This will clear cached data like images and temporary files. '
+          'Your health data and account information will not be affected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFFC9A96E)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Clear',
+              style: TextStyle(color: Color(0xFFE8DCC8)),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldClear == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cache cleared successfully.'),
+          backgroundColor: Color(0xFFC9A96E),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmClearAiConversationHistory() async {
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear AI Conversation History?'),
+        content: const Text(
+          'This will permanently delete all of your saved AI conversations. '
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFFC9A96E)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Clear History',
+              style: TextStyle(color: Color(0xFFE08080)),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldClear != true || !mounted) return;
+
+    try {
+      await AiConversationRepository.clearAll();
+      ref.invalidate(aiConversationsProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('AI conversation history cleared.'),
+            backgroundColor: Color(0xFFC9A96E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to clear AI conversation history.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildMenuItem(
+    BuildContext context,
+    IconData icon,
+    String title,
+    String subtitle,
+    Widget destination,
+  ) {
     final vh = SizeConfig.vh;
     final vw = SizeConfig.vw;
     return InkWell(
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => destination,
-          ),
-        );
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => destination));
       },
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 4.0 * vw, vertical: 1.7 * vh),
@@ -450,11 +687,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 color: const Color(0xFF1E1E1E).withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2.0 * vw),
               ),
-              child: Icon(
-                icon,
-                color: const Color(0xFFE8DCC8),
-                size: 5.0 * vw,
-              ),
+              child: Icon(icon, color: const Color(0xFFE8DCC8), size: 5.0 * vw),
             ),
             SizedBox(width: 4.0 * vw),
             Expanded(
@@ -472,10 +705,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   SizedBox(height: 0.25 * vh),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[400],
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[400]),
                   ),
                 ],
               ),
@@ -521,10 +751,22 @@ class _AvatarPickerSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
               ),
             ),
-            _tile(context, 'Choose from Library',
-                Icons.photo_library_outlined, _AvatarAction.gallery, vw, vh),
-            _tile(context, 'Take a Photo',
-                Icons.camera_alt_outlined, _AvatarAction.camera, vw, vh),
+            _tile(
+              context,
+              'Choose from Library',
+              Icons.photo_library_outlined,
+              _AvatarAction.gallery,
+              vw,
+              vh,
+            ),
+            _tile(
+              context,
+              'Take a Photo',
+              Icons.camera_alt_outlined,
+              _AvatarAction.camera,
+              vw,
+              vh,
+            ),
             if (hasCustomAvatar) ...[
               Divider(
                 height: 1,
@@ -533,9 +775,15 @@ class _AvatarPickerSheet extends StatelessWidget {
                 endIndent: 4 * vw,
               ),
               SizedBox(height: 0.5 * vh),
-              _tile(context, 'Remove Photo',
-                  Icons.delete_outline_rounded, _AvatarAction.remove, vw, vh,
-                  destructive: true),
+              _tile(
+                context,
+                'Remove Photo',
+                Icons.delete_outline_rounded,
+                _AvatarAction.remove,
+                vw,
+                vh,
+                destructive: true,
+              ),
             ],
           ],
         ),
@@ -552,11 +800,15 @@ class _AvatarPickerSheet extends StatelessWidget {
     double vh, {
     bool destructive = false,
   }) {
-    final color =
-        destructive ? const Color(0xFFE08080) : const Color(0xFFE8DCC8);
+    final color = destructive
+        ? const Color(0xFFE08080)
+        : const Color(0xFFE8DCC8);
     return ListTile(
       leading: Icon(icon, color: color, size: 6 * vw),
-      title: Text(label, style: TextStyle(color: color, fontSize: 4 * vw)),
+      title: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 4 * vw),
+      ),
       onTap: () => Navigator.of(context).pop(action),
       contentPadding: EdgeInsets.symmetric(
         horizontal: 6 * vw,

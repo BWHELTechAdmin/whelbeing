@@ -67,4 +67,10 @@ class AiConversationRepository {
 
     return AiConversation.fromJson(data);
   }
+
+  /// Deletes every persisted AI conversation belonging to the signed-in user.
+  static Future<void> clearAll() async {
+    final userId = _client.auth.currentUser!.id;
+    await _client.from(_table).delete().eq('user_id', userId);
+  }
 }

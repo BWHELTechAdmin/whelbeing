@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/biometric_service.dart';
 import '../utils/size_config.dart';
 
 class PrivacyScreen extends StatefulWidget {
@@ -9,7 +10,6 @@ class PrivacyScreen extends StatefulWidget {
 }
 
 class _PrivacyScreenState extends State<PrivacyScreen> {
-  bool _biometricLock = false;
   bool _analyticsSharing = true;
   bool _crashReports = true;
 
@@ -28,13 +28,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         padding: EdgeInsets.symmetric(vertical: 1.0 * SizeConfig.vh),
         children: [
           _buildSection('Security', [
-            _buildToggle(
-              'Biometric Lock',
-              'Require Face ID or fingerprint to open the app',
-              Icons.fingerprint,
-              _biometricLock,
-              (v) => setState(() => _biometricLock = v),
-            ),
+            _buildBiometricToggle(),
             _buildActionTile(
               'Change Password',
               'Update your account password',
@@ -72,7 +66,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Your data export will be emailed to you shortly'),
+                    content: Text(
+                      'Your data export will be emailed to you shortly',
+                    ),
                     backgroundColor: Color(0xFFC9A96E),
                     behavior: SnackBarBehavior.floating,
                   ),
@@ -118,6 +114,62 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     );
   }
 
+  Widget _buildBiometricToggle() {
+    final vh = SizeConfig.vh;
+    final vw = SizeConfig.vw;
+    return ValueListenableBuilder<bool>(
+      valueListenable: BiometricSettings.notifier,
+      builder: (context, enabled, _) {
+        return Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 4.0 * vw,
+            vertical: 0.5 * vh,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(3.0 * vw),
+              border: Border.all(color: const Color(0xFF2A2520)),
+            ),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 3.0 * vw,
+                vertical: 0.25 * vh,
+              ),
+              secondary: Container(
+                padding: EdgeInsets.all(2.0 * vw),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A2520).withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2.0 * vw),
+                ),
+                child: Icon(
+                  Icons.fingerprint,
+                  color: const Color(0xFFE8DCC8),
+                  size: 5.0 * vw,
+                ),
+              ),
+              title: const Text(
+                'Biometric Lock',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFE8DCC8),
+                ),
+              ),
+              subtitle: Text(
+                'Require Face ID or fingerprint to open the app',
+                style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+              ),
+              value: enabled,
+              activeThumbColor: const Color(0xFFC9A96E),
+              onChanged: BiometricSettings.setEnabled,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSection(String title, List<Widget> children) {
     final vh = SizeConfig.vh;
     final vw = SizeConfig.vw;
@@ -158,7 +210,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           border: Border.all(color: const Color(0xFF2A2520)),
         ),
         child: SwitchListTile(
-          contentPadding: EdgeInsets.symmetric(horizontal: 3.0 * vw, vertical: 0.25 * vh),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 3.0 * vw,
+            vertical: 0.25 * vh,
+          ),
           secondary: Container(
             padding: EdgeInsets.all(2.0 * vw),
             decoration: BoxDecoration(
@@ -209,7 +264,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           ),
         ),
         child: ListTile(
-          contentPadding: EdgeInsets.symmetric(horizontal: 3.0 * vw, vertical: 0.25 * vh),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 3.0 * vw,
+            vertical: 0.25 * vh,
+          ),
           leading: Container(
             padding: EdgeInsets.all(2.0 * vw),
             decoration: BoxDecoration(
@@ -239,7 +297,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           trailing: Icon(
             Icons.arrow_forward_ios,
             size: 4.0 * vw,
-            color: isDestructive ? Colors.red.withValues(alpha: 0.5) : const Color(0xFFC9A96E),
+            color: isDestructive
+                ? Colors.red.withValues(alpha: 0.5)
+                : const Color(0xFFC9A96E),
           ),
           onTap: onTap,
         ),
