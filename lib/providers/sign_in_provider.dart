@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
+import '../providers/auth_provider.dart';
 
 import '../repositories/auth_repository.dart';
 
@@ -78,6 +79,10 @@ class SignInNotifier extends AutoDisposeNotifier<SignInState> {
           .read(authRepositoryProvider)
           .signInWithPassword(email: email, password: password);
     } on AuthException catch (e) {
+      if (e.message.toLowerCase().contains('email not confirmed')) {
+        ref.read(pendingEmailVerificationProvider.notifier).state = email;
+        return;
+      }
       state = state.copyWith(error: e.message);
     } catch (e) {
       state = state.copyWith(error: e.toString());
@@ -86,7 +91,7 @@ class SignInNotifier extends AutoDisposeNotifier<SignInState> {
     }
   }
 
-  Future<void> signUpWithEmail(
+  Future<bool> signUpWithEmail(
     String email,
     String password, {
     String? firstName,
@@ -94,12 +99,15 @@ class SignInNotifier extends AutoDisposeNotifier<SignInState> {
   }) async {
     state = state.copyWith(loadingEmail: true, clearError: true);
     try {
-      await ref.read(authRepositoryProvider).signUpWithPassword(
+      await ref
+          .read(authRepositoryProvider)
+          .signUpWithPassword(
             email: email,
             password: password,
             firstName: firstName,
             lastName: lastName,
           );
+      return true;
     } on AuthException catch (e) {
       state = state.copyWith(error: e.message);
     } catch (e) {
@@ -107,11 +115,13 @@ class SignInNotifier extends AutoDisposeNotifier<SignInState> {
     } finally {
       state = state.copyWith(loadingEmail: false);
     }
+    return false;
   }
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 /// Auto-disposed so state resets whenever the sign-in screen is closed.
-final signInProvider =
-    AutoDisposeNotifierProvider<SignInNotifier, SignInState>(SignInNotifier.new);
+final signInProvider = AutoDisposeNotifierProvider<SignInNotifier, SignInState>(
+  SignInNotifier.new,
+);

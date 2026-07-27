@@ -19,6 +19,20 @@
 class SupabaseConfig {
   SupabaseConfig._();
 
+  /// Mobile deep-link callback used exclusively for password recovery.
+  ///
+  /// Keep this in sync with iOS URL types, Android intent filters, and
+  /// Supabase Authentication → URL Configuration → Additional Redirect URLs.
+  static const passwordRecoveryRedirectUrl =
+      'com.bwhel.whelbeing://reset-password';
+
+  /// Mobile deep-link callback used after confirming a new email address.
+  ///
+  /// Keep this in sync with Android intent filters and Supabase
+  /// Authentication → URL Configuration → Additional Redirect URLs.
+  static const emailConfirmationRedirectUrl =
+      'com.bwhel.whelbeing://email-confirmed';
+
   /// Your Supabase project URL.
   ///
   /// For local dev, pass via --dart-define=SUPABASE_URL=http://127.0.0.1:54321

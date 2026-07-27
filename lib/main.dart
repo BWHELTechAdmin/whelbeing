@@ -7,11 +7,15 @@ import 'utils/size_config.dart';
 import 'screens/home_screen.dart';
 import 'screens/track_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/email_verification_screen.dart';
+import 'screens/reset_password_screen.dart';
+import 'screens/sign_in_screen.dart';
 import 'config/supabase_config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/health_record_provider.dart';
 import 'providers/onboarding_provider.dart';
 import 'repositories/auth_repository.dart';
+import 'services/auth_callback_handler.dart';
 import 'services/biometric_service.dart';
 
 Future<void> main() async {
@@ -20,14 +24,25 @@ Future<void> main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+  final authCallbackHandler = AuthCallbackHandler();
+  await authCallbackHandler.start();
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,
-    anonKey: SupabaseConfig.supabaseAnonKey,
+    publishableKey: SupabaseConfig.supabaseAnonKey,
+    authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
   );
+  await authCallbackHandler.attachSupabase();
   // Load the biometric setting before runApp so _BiometricGuard can read it
   // synchronously on the first frame without any async gap.
   await BiometricSettings.init();
-  runApp(const ProviderScope(child: WhelbeingApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        authCallbackHandlerProvider.overrideWithValue(authCallbackHandler),
+      ],
+      child: const WhelbeingApp(),
+    ),
+  );
 }
 
 class WhelbeingApp extends StatelessWidget {
@@ -74,6 +89,12 @@ class _AppEntry extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isAuthenticated = ref.watch(isAuthenticatedProvider);
+    final isEmailVerified = ref.watch(isEmailVerifiedProvider);
+    final authState = ref.watch(authStateChangesProvider).valueOrNull;
+    final callbackState = ref.watch(authCallbackStateProvider);
+    final pendingVerificationEmail = ref.watch(
+      pendingEmailVerificationProvider,
+    );
 
     // Record today as an active day whenever a session starts.
     // AuthChangeEvent.initialSession fires on app start with existing session;
@@ -88,12 +109,30 @@ class _AppEntry extends ConsumerWidget {
             .then((_) => ref.invalidate(streakProvider))
             .ignore();
       }
+      if (event == AuthChangeEvent.passwordRecovery) {
+        ref.read(passwordRecoveryInProgressProvider.notifier).state = true;
+      }
       // Clear the local onboarding flag so _AppEntry routes back to the
       // sign-in / onboarding screen rather than staying on MainNavigation.
       if (event == AuthChangeEvent.signedOut) {
         ref.read(onboardingCompleteProvider.notifier).state = false;
+        ref.read(passwordRecoveryInProgressProvider.notifier).state = false;
+      }
+      if (event == AuthChangeEvent.signedIn) {
+        ref.read(signedOutEntryProvider.notifier).state =
+            SignedOutEntry.onboarding;
+        ref.read(pendingEmailVerificationProvider.notifier).state = null;
+        final callbackHandler = ref.read(authCallbackHandlerProvider);
+        if (callbackHandler.state.value.kind !=
+            AuthCallbackKind.passwordRecovery) {
+          callbackHandler.clear();
+        }
       }
     });
+    final isPasswordRecovery =
+        authState?.event == AuthChangeEvent.passwordRecovery ||
+        ref.watch(passwordRecoveryInProgressProvider);
+    final signedOutEntry = ref.watch(signedOutEntryProvider);
     // Persisted flag — true only if the user has previously finished onboarding
     // on any device (stored in Supabase user metadata).
     final persistedComplete = ref.watch(hasCompletedOnboardingProvider);
@@ -105,25 +144,63 @@ class _AppEntry extends ConsumerWidget {
     //   (a) Returning user — authenticated + persisted flag, OR
     //   (b) Just finished — local flag set this session (covers both
     //       authenticated users and users who skip sign-in entirely).
+    if (callbackState.kind == AuthCallbackKind.passwordRecovery) {
+      return ResetPasswordScreen(
+        callbackError: callbackState.errorMessage,
+        isProcessingCallback: callbackState.isProcessing,
+      );
+    }
+
+    if (isPasswordRecovery) {
+      return const ResetPasswordScreen();
+    }
+
+    if (pendingVerificationEmail != null &&
+        !(isAuthenticated && isEmailVerified)) {
+      return EmailVerificationScreen(
+        email: pendingVerificationEmail,
+        onVerified: () =>
+            ref.read(pendingEmailVerificationProvider.notifier).state = null,
+        onBack: () {
+          ref.read(pendingEmailVerificationProvider.notifier).state = null;
+          ref.read(signedOutEntryProvider.notifier).state =
+              SignedOutEntry.signIn;
+        },
+      );
+    }
+
+    if (callbackState.kind == AuthCallbackKind.emailConfirmation &&
+        callbackState.hasError) {
+      return SignInScreen(
+        showBackButton: false,
+        initialError: callbackState.errorMessage,
+      );
+    }
+
     if ((isAuthenticated && persistedComplete) || localComplete) {
       return const _BiometricGuard();
     }
 
+    if (isAuthenticated && !isEmailVerified) {
+      final email = ref.watch(currentUserProvider)?.email;
+      if (email != null) {
+        return EmailVerificationScreen(
+          email: email,
+          onVerified: () => ref.invalidate(authStateChangesProvider),
+        );
+      }
+    }
+
+    if (!isAuthenticated && signedOutEntry == SignedOutEntry.signIn) {
+      return const SignInScreen(showBackButton: false);
+    }
+
     return HealthProfileOnboarding(
-        isAlreadyAuthenticated: isAuthenticated,
-        onComplete: () {
-          // Best-effort persist to Supabase if the user is signed in.
-          // Fire-and-forget — local flag handles navigation immediately;
-          // hasCompletedOnboardingProvider refreshes once Supabase responds.
-          if (ref.read(isAuthenticatedProvider)) {
-            ref
-                .read(authRepositoryProvider)
-                .markOnboardingComplete()
-                .ignore();
-          }
-          ref.read(onboardingCompleteProvider.notifier).state = true;
-        },
-      );
+      isAlreadyAuthenticated: isAuthenticated,
+      onComplete: () {
+        ref.read(onboardingCompleteProvider.notifier).state = true;
+      },
+    );
   }
 }
 
@@ -337,7 +414,9 @@ class _MainNavigationState extends State<MainNavigation> {
         decoration: BoxDecoration(
           color: const Color(0xFF1A1A1A),
           borderRadius: BorderRadius.circular(7.5 * vw),
-          border: Border.all(color: const Color(0xFF2A2520).withValues(alpha: 0.5)),
+          border: Border.all(
+            color: const Color(0xFF2A2520).withValues(alpha: 0.5),
+          ),
         ),
         child: Center(
           child: ClipRRect(
@@ -348,44 +427,45 @@ class _MainNavigationState extends State<MainNavigation> {
               ).copyWith(navigationBarTheme: const NavigationBarThemeData()),
               child: Align(
                 alignment: AlignmentGeometry.bottomCenter,
-                child: MediaQuery.removePadding(context: context,
-                removeBottom: true,
-                removeTop: true,
-                child:BottomNavigationBar(
-                  currentIndex: _currentIndex,
-                  onTap: (index) {
-                    setState(() {
-                      _currentIndex = index;
-                    });
-                  },
-                  type: BottomNavigationBarType.fixed,
-                  backgroundColor: const Color(0xFF1A1A1A),
-                  selectedItemColor: const Color(0xFFC9A96E),
-                  unselectedItemColor: const Color(0xFF5A5A5A),
-                  selectedFontSize: 3.0 * vw,
-                  unselectedFontSize: 3.0 * vw,
-                  iconSize: 5.5 * vw,
-                  elevation: 10,
-                  selectedLabelStyle: const TextStyle(height: 1.0),
-                  unselectedLabelStyle: const TextStyle(height: 1.0),
-                  items: const [
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.book_outlined),
-                      activeIcon: Icon(Icons.book),
-                      label: 'Learn',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.home_outlined),
-                      activeIcon: Icon(Icons.home),
-                      label: 'Home',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.favorite_outline),
-                      activeIcon: Icon(Icons.favorite),
-                      label: 'Track',
-                    ),
-                  ],
-                ),
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeBottom: true,
+                  removeTop: true,
+                  child: BottomNavigationBar(
+                    currentIndex: _currentIndex,
+                    onTap: (index) {
+                      setState(() {
+                        _currentIndex = index;
+                      });
+                    },
+                    type: BottomNavigationBarType.fixed,
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    selectedItemColor: const Color(0xFFC9A96E),
+                    unselectedItemColor: const Color(0xFF5A5A5A),
+                    selectedFontSize: 3.0 * vw,
+                    unselectedFontSize: 3.0 * vw,
+                    iconSize: 5.5 * vw,
+                    elevation: 10,
+                    selectedLabelStyle: const TextStyle(height: 1.0),
+                    unselectedLabelStyle: const TextStyle(height: 1.0),
+                    items: const [
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.book_outlined),
+                        activeIcon: Icon(Icons.book),
+                        label: 'Learn',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.home_outlined),
+                        activeIcon: Icon(Icons.home),
+                        label: 'Home',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.favorite_outline),
+                        activeIcon: Icon(Icons.favorite),
+                        label: 'Track',
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

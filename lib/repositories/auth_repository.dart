@@ -95,10 +95,7 @@ class AuthRepository {
     required String email,
     required String password,
   }) async {
-    await _client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
+    await _client.auth.signInWithPassword(email: email, password: password);
   }
 
   /// Registers a new account with [email] and [password].
@@ -114,11 +111,58 @@ class AuthRepository {
     await _client.auth.signUp(
       email: email,
       password: password,
+      emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
       data: {
         if (firstName != null && firstName.isNotEmpty) 'first_name': firstName,
         if (lastName != null && lastName.isNotEmpty) 'last_name': lastName,
       },
     );
+  }
+
+  /// Signs in if needed, fetches fresh user data, and checks email confirmation.
+  ///
+  /// A password is necessary immediately after a confirmation-required sign-up,
+  /// because Supabase does not create a session until the email is confirmed.
+  Future<bool> isEmailVerified({
+    required String email,
+    String? password,
+  }) async {
+    if (_client.auth.currentUser?.email != email) {
+      if (password == null) return false;
+      await signInWithPassword(email: email, password: password);
+    }
+
+    final user = (await _client.auth.getUser()).user;
+    final isVerified = user?.emailConfirmedAt != null;
+    if (isVerified && _client.auth.currentSession != null) {
+      await _client.auth.refreshSession();
+    }
+    return isVerified;
+  }
+
+  /// Sends another confirmation email for a pending email/password sign-up.
+  Future<void> resendEmailVerification(String email) {
+    return _client.auth.resend(
+      email: email,
+      type: OtpType.signup,
+      emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
+    );
+  }
+
+  /// Sends a password-recovery link without revealing whether [email] exists.
+  Future<void> requestPasswordReset(String email) {
+    return _client.auth.resetPasswordForEmail(
+      email,
+      redirectTo: SupabaseConfig.passwordRecoveryRedirectUrl,
+    );
+  }
+
+  /// Replaces the password for the active recovery session.
+  ///
+  /// Supabase creates this temporary session only after the user opens a valid
+  /// recovery link; callers must not invoke this from a normal sign-in flow.
+  Future<void> updatePassword(String password) {
+    return _client.auth.updateUser(UserAttributes(password: password));
   }
 
   // ── Activity tracking ────────────────────────────────────────────────
@@ -149,7 +193,9 @@ class AuthRepository {
         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
     return List.generate(
-        length, (_) => charset[random.nextInt(charset.length)]).join();
+      length,
+      (_) => charset[random.nextInt(charset.length)],
+    ).join();
   }
 
   static String _sha256(String input) =>

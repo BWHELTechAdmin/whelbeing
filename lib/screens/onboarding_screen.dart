@@ -1,13 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/auth_provider.dart';
 import '../providers/sign_in_provider.dart';
+import '../repositories/auth_repository.dart';
 import '../repositories/profile_repository.dart';
 import '../utils/size_config.dart';
 import '../utils/validators.dart';
 import '../widgets/password_requirements.dart';
+import 'email_verification_screen.dart';
 import 'sign_in_screen.dart';
 
 // ─── Data model ──────────────────────────────────────────────────────────────
@@ -70,7 +69,7 @@ class _StepConfig {
 
 // ─── Onboarding step ─────────────────────────────────────────────────────────
 
-enum _OnboardingStep { intro, signUp, questions, activation }
+enum _OnboardingStep { intro, signUp, emailVerification, questions, activation }
 
 // ─── Widget ─────────────────────────────────────────────────────────────────
 
@@ -92,22 +91,27 @@ class HealthProfileOnboarding extends ConsumerStatefulWidget {
       _HealthProfileOnboardingState();
 }
 
-class _HealthProfileOnboardingState extends ConsumerState<HealthProfileOnboarding> {
+class _HealthProfileOnboardingState
+    extends ConsumerState<HealthProfileOnboarding> {
   late _OnboardingStep _step;
   int _currentStep = 0;
   final Map<int, dynamic> _answers = {};
   final Map<int, TextEditingController> _textControllers = {};
   late final PageController _pageController;
+  String? _verificationEmail;
+  String? _verificationPassword;
+  bool _isSaving = false;
+  String? _saveError;
 
   // ─── Content ───────────────────────────────────────────────────────────────
 
   static const _sectionTitles = [
-    'Identity',       // Screen 2
-    'Experience',     // Screen 3
-    'Your Needs',     // Screen 4
-    'Real-Time',      // Screen 5
+    'Identity', // Screen 2
+    'Experience', // Screen 3
+    'Your Needs', // Screen 4
+    'Real-Time', // Screen 5
     'Health Context', // Screen 6
-    'Privacy',        // Screen 7
+    'Privacy', // Screen 7
   ];
 
   static final List<_StepConfig> _steps = [
@@ -320,27 +324,44 @@ class _HealthProfileOnboardingState extends ConsumerState<HealthProfileOnboardin
 
   // ─── Profile persistence ───────────────────────────────────────────────────
 
-  /// Fire-and-forget save of onboarding answers to `public.profiles`.
-  /// Failures are swallowed — profile data is supplementary and should never
-  /// block the user from entering the app.
-  void _saveProfile() {
-    ref
-        .read(profileRepositoryProvider)
-        .saveOnboardingProfile(
-          racialIdentity: (_answers[0] as List?)?.cast<String>(),
-          ageRange: _answers[1] as String?,
-          zipCode: _textControllers[2]?.text.trim(),
-          insuranceType: _answers[3] as String?,
-          feltDismissed: _answers[4] as String?,
-          dismissalExperiences: (_answers[5] as List?)?.cast<String>(),
-          dismissalCareType: _answers[6] as String?,
-          supportNeeds: (_answers[7] as List?)?.cast<String>(),
-          supportTiming: _answers[8] as String?,
-          realtimeInterest: _answers[9] as String?,
-          healthAreas: (_answers[10] as List?)?.cast<String>(),
-          dataConsent: _answers[11] as String?,
-        )
-        .ignore();
+  /// Saves the profile and the required completion marker before allowing
+  /// entry, so a closed app cannot send the user back through onboarding.
+  Future<void> _completeOnboarding() async {
+    if (_isSaving) return;
+    setState(() {
+      _isSaving = true;
+      _saveError = null;
+    });
+
+    try {
+      await ref
+          .read(profileRepositoryProvider)
+          .saveOnboardingProfile(
+            racialIdentity: (_answers[0] as List?)?.cast<String>(),
+            ageRange: _answers[1] as String?,
+            zipCode: _textControllers[2]?.text.trim(),
+            insuranceType: _answers[3] as String?,
+            feltDismissed: _answers[4] as String?,
+            dismissalExperiences: (_answers[5] as List?)?.cast<String>(),
+            dismissalCareType: _answers[6] as String?,
+            supportNeeds: (_answers[7] as List?)?.cast<String>(),
+            supportTiming: _answers[8] as String?,
+            realtimeInterest: _answers[9] as String?,
+            healthAreas: (_answers[10] as List?)?.cast<String>(),
+            dataConsent: _answers[11] as String?,
+          );
+      await ref.read(authRepositoryProvider).markOnboardingComplete();
+      if (!mounted) return;
+      setState(() => _step = _OnboardingStep.activation);
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _saveError =
+            'We could not save your profile. Check your connection and try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   // ─── Computed properties ───────────────────────────────────────────────────
@@ -353,7 +374,7 @@ class _HealthProfileOnboardingState extends ConsumerState<HealthProfileOnboardin
   static const _kFeltDismissedStep = 4;
   static const _kSupportNeedsStep = 7;
 
-  void _goNext() {
+  Future<void> _goNext() async {
     FocusScope.of(context).unfocus();
     int nextStep = _currentStep + 1;
 
@@ -370,10 +391,8 @@ class _HealthProfileOnboardingState extends ConsumerState<HealthProfileOnboardin
         duration: const Duration(milliseconds: 380),
         curve: Curves.easeInOutCubic,
       );
-  } else {
-      // All questions answered — persist answers then show activation screen.
-      _saveProfile();
-      setState(() => _step = _OnboardingStep.activation);
+    } else {
+      await _completeOnboarding();
     }
   }
 
@@ -426,8 +445,7 @@ class _HealthProfileOnboardingState extends ConsumerState<HealthProfileOnboardin
         _answers[stepIndex] = option;
       } else {
         final step = _steps[stepIndex];
-        final current =
-            List<String>.from((_answers[stepIndex] as List?) ?? []);
+        final current = List<String>.from((_answers[stepIndex] as List?) ?? []);
         if (current.contains(option)) {
           current.remove(option);
         } else {
@@ -496,42 +514,54 @@ class _HealthProfileOnboardingState extends ConsumerState<HealthProfileOnboardin
           duration: const Duration(milliseconds: 350),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: child,
-          ),
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
           child: switch (_step) {
             _OnboardingStep.intro => _IntroPage(
-                key: const ValueKey('intro'),
-                onStart: () => setState(() => _step = _OnboardingStep.signUp),
-              ),
+              key: const ValueKey('intro'),
+              onStart: () => setState(() => _step = _OnboardingStep.signUp),
+            ),
             _OnboardingStep.signUp => _SignUpPage(
-                key: const ValueKey('signup'),
-                onSignUpComplete: () =>
-                    setState(() => _step = _OnboardingStep.questions),
-                onBack: () => setState(() => _step = _OnboardingStep.intro),
-              ),
+              key: const ValueKey('signup'),
+              onSignUpComplete: (email, password) => setState(() {
+                _verificationEmail = email;
+                _verificationPassword = password;
+                _step = _OnboardingStep.emailVerification;
+              }),
+              onBack: () => setState(() => _step = _OnboardingStep.intro),
+            ),
+            _OnboardingStep.emailVerification => EmailVerificationScreen(
+              key: const ValueKey('email-verification'),
+              email: _verificationEmail!,
+              password: _verificationPassword,
+              onVerified: () => setState(() {
+                _verificationPassword = null;
+                _step = _OnboardingStep.questions;
+              }),
+            ),
             _OnboardingStep.questions => _QuestionsPage(
-                key: const ValueKey('questions'),
-                steps: _steps,
-                currentStep: _currentStep,
-                currentSection: _currentSection,
-                sectionTitles: _sectionTitles,
-                pageController: _pageController,
-                answers: _answers,
-                canProceed: _canProceed(),
-                isLast: _currentStep == _steps.length - 1,
-                isSelected: _isSelected,
-                onSelect: _selectOption,
-                onNext: _goNext,
-                onBack: _goBack,
-                getTextController: _getTextController,
-                getValidationError: _getValidationError,
-              ),
+              key: const ValueKey('questions'),
+              steps: _steps,
+              currentStep: _currentStep,
+              currentSection: _currentSection,
+              sectionTitles: _sectionTitles,
+              pageController: _pageController,
+              answers: _answers,
+              canProceed: _canProceed(),
+              isLast: _currentStep == _steps.length - 1,
+              isSaving: _isSaving,
+              saveError: _saveError,
+              isSelected: _isSelected,
+              onSelect: _selectOption,
+              onNext: _goNext,
+              onBack: _goBack,
+              getTextController: _getTextController,
+              getValidationError: _getValidationError,
+            ),
             _OnboardingStep.activation => _ActivationPage(
-                key: const ValueKey('activation'),
-                onComplete: widget.onComplete,
-              ),
+              key: const ValueKey('activation'),
+              onComplete: widget.onComplete,
+            ),
           },
         ),
       ),
@@ -693,9 +723,7 @@ class _IntroPage extends StatelessWidget {
                 fontWeight: FontWeight.w300,
                 letterSpacing: 5.0,
               ),
-              children: const [
-                TextSpan(text: 'WHELBEING'),
-              ],
+              children: const [TextSpan(text: 'WHELBEING')],
             ),
           ),
           SizedBox(height: 1.8 * vh),
@@ -758,7 +786,9 @@ class _IntroPage extends StatelessWidget {
                   color: const Color(0xFF181310),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: const Color(0xFF3D2E14), width: 0.8),
+                    color: const Color(0xFF3D2E14),
+                    width: 0.8,
+                  ),
                 ),
                 child: Center(
                   child: Text(
@@ -778,9 +808,9 @@ class _IntroPage extends StatelessWidget {
 
           // Sign-in link
           GestureDetector(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SignInScreen()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SignInScreen())),
             child: Text(
               'Already a member? Sign in',
               style: TextStyle(
@@ -809,7 +839,7 @@ class _SignUpPage extends ConsumerStatefulWidget {
     required this.onBack,
   });
 
-  final VoidCallback onSignUpComplete;
+  final void Function(String email, String password) onSignUpComplete;
   final VoidCallback onBack;
 
   @override
@@ -833,7 +863,7 @@ class _SignUpPageState extends ConsumerState<_SignUpPage> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final firstName = _firstNameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
@@ -847,29 +877,27 @@ class _SignUpPageState extends ConsumerState<_SignUpPage> {
     }
 
     setState(() => _localError = null);
-    ref.read(signInProvider.notifier).signUpWithEmail(
-      email,
-      password,
-      firstName: firstName,
-      lastName: _lastNameController.text.trim().isEmpty
-          ? null
-          : _lastNameController.text.trim(),
-    );
+    final didSignUp = await ref
+        .read(signInProvider.notifier)
+        .signUpWithEmail(
+          email,
+          password,
+          firstName: firstName,
+          lastName: _lastNameController.text.trim().isEmpty
+              ? null
+              : _lastNameController.text.trim(),
+        );
+    if (didSignUp && mounted) {
+      widget.onSignUpComplete(email, password);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Advance to health-profile questions as soon as any sign-up method succeeds.
-    ref.listen<bool>(isAuthenticatedProvider, (_, isAuth) {
-      if (isAuth && context.mounted) widget.onSignUpComplete();
-    });
-
     SizeConfig.init(context);
     final vh = SizeConfig.vh;
     final vw = SizeConfig.vw;
     final state = ref.watch(signInProvider);
-    final notifier = ref.read(signInProvider.notifier);
-
     return SizedBox.expand(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -893,260 +921,260 @@ class _SignUpPageState extends ConsumerState<_SignUpPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-            // ── Brand mark ──────────────────────────────────────────────────
-            RichText(
-              textAlign: TextAlign.center,
-              text: TextSpan(
-                style: TextStyle(
-                  fontSize: 9 * vw,
-                  color: const Color(0xFFC9A96E),
-                  fontWeight: FontWeight.w300,
-                  letterSpacing: 4.0,
-                ),
-                children: const [
-                  TextSpan(text: 'WHELBEING'),
-                ],
-              ),
-            ),
-            SizedBox(height: 0.6 * vh),
-            Text(
-              'Infrastructure disguised as lifestyle.',
-              style: TextStyle(
-                fontSize: 3.0 * vw,
-                color: const Color(0xFF4A4040),
-                fontStyle: FontStyle.italic,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 4 * vh),
-
-            // ── Heading ──────────────────────────────────────────────────
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                  // ── Brand mark ──────────────────────────────────────────────────
+                  RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      style: TextStyle(
+                        fontSize: 9 * vw,
+                        color: const Color(0xFFC9A96E),
+                        fontWeight: FontWeight.w300,
+                        letterSpacing: 4.0,
+                      ),
+                      children: const [TextSpan(text: 'WHELBEING')],
+                    ),
+                  ),
+                  SizedBox(height: 0.6 * vh),
                   Text(
-                    'Create your\naccount.',
+                    'Infrastructure disguised as lifestyle.',
                     style: TextStyle(
-                      fontSize: 9.5 * vw,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFFE8DCC8),
-                      height: 1.08,
-                      letterSpacing: -0.5,
+                      fontSize: 3.0 * vw,
+                      color: const Color(0xFF4A4040),
+                      fontStyle: FontStyle.italic,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 4 * vh),
+
+                  // ── Heading ──────────────────────────────────────────────────
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Create your\naccount.',
+                          style: TextStyle(
+                            fontSize: 9.5 * vw,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFFE8DCC8),
+                            height: 1.08,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        SizedBox(height: 1.5 * vh),
+                        Text(
+                          'Join BWhel and take control of your health.',
+                          style: TextStyle(
+                            fontSize: 3.5 * vw,
+                            color: const Color(0xFF5A4A3A),
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 4 * vh),
+
+                  // ── Error banner ────────────────────────────────────────────────
+                  if (_localError != null || state.error != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(3.5 * vw),
+                      margin: EdgeInsets.only(bottom: 2.5 * vh),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A1010),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF5A2020)),
+                      ),
+                      child: Text(
+                        _localError ?? state.error!,
+                        style: TextStyle(
+                          fontSize: 3.0 * vw,
+                          color: const Color(0xFFE08080),
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // ── Form fields ─────────────────────────────────────────────
+                  _OBTextField(
+                    controller: _firstNameController,
+                    hint: 'First name',
+                    keyboardType: TextInputType.name,
+                    textInputAction: TextInputAction.next,
+                    vw: vw,
+                    vh: vh,
+                  ),
+                  SizedBox(height: 1.5 * vh),
+                  _OBTextField(
+                    controller: _lastNameController,
+                    hint: 'Last name (optional)',
+                    keyboardType: TextInputType.name,
+                    textInputAction: TextInputAction.next,
+                    vw: vw,
+                    vh: vh,
+                  ),
+                  SizedBox(height: 1.5 * vh),
+                  _OBTextField(
+                    controller: _emailController,
+                    hint: 'Email address',
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    vw: vw,
+                    vh: vh,
+                  ),
+                  SizedBox(height: 1.5 * vh),
+                  _OBTextField(
+                    controller: _passwordController,
+                    hint: 'Password',
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _submit(),
+                    vw: vw,
+                    vh: vh,
+                    suffix: GestureDetector(
+                      onTap: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 3 * vw),
+                        child: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: const Color(0xFF5A4A3A),
+                          size: 5 * vw,
+                        ),
+                      ),
                     ),
                   ),
                   SizedBox(height: 1.5 * vh),
-                  Text(
-                    'Join BWhel and take control of your health.',
-                    style: TextStyle(
-                      fontSize: 3.5 * vw,
-                      color: const Color(0xFF5A4A3A),
-                      height: 1.5,
+                  PasswordRequirementsChecklist(
+                    controller: _passwordController,
+                    vw: vw,
+                    vh: vh,
+                  ),
+                  SizedBox(height: 3 * vh),
+
+                  // ── Create Account button ───────────────────────────────────────
+                  GestureDetector(
+                    onTap: state.isLoading ? null : _submit,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(vertical: 2.1 * vh),
+                      decoration: BoxDecoration(
+                        gradient: state.isLoading
+                            ? null
+                            : const LinearGradient(
+                                colors: [Color(0xFFC9A96E), Color(0xFF8B6914)],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                        color: state.isLoading ? const Color(0xFF141414) : null,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: state.isLoading
+                              ? const Color(0xFF222220)
+                              : Colors.transparent,
+                        ),
+                        boxShadow: state.isLoading
+                            ? []
+                            : [
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFFC9A96E,
+                                  ).withValues(alpha: 0.22),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                      ),
+                      child: Center(
+                        child: state.loadingEmail
+                            ? SizedBox(
+                                width: 5.5 * vw,
+                                height: 5.5 * vw,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: state.isLoading
+                                      ? const Color(0xFF4A4A4A)
+                                      : const Color(0xFF0D0D0D),
+                                ),
+                              )
+                            : Text(
+                                'Create Account',
+                                style: TextStyle(
+                                  fontSize: 3.4 * vw,
+                                  fontWeight: FontWeight.w700,
+                                  color: state.isLoading
+                                      ? const Color(0xFF3A3A3A)
+                                      : const Color(0xFF0D0D0D),
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
-            SizedBox(height: 4 * vh),
+                  SizedBox(height: 4 * vh),
 
-    // ── Error banner ────────────────────────────────────────────────
-            if (_localError != null || state.error != null) ...[  
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(3.5 * vw),
-                margin: EdgeInsets.only(bottom: 2.5 * vh),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A1010),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF5A2020)),
-                ),
-                child: Text(
-                  _localError ?? state.error!,
-                  style: TextStyle(
-                    fontSize: 3.0 * vw,
-                    color: const Color(0xFFE08080),
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
+                  // ── Divider ────────────────────────────────────────────────────
+                  // Row(
+                  //   children: [
+                  //     const Expanded(
+                  //         child: Divider(color: Color(0xFF1E1E1A), height: 1)),
+                  //     Padding(
+                  //       padding: EdgeInsets.symmetric(horizontal: 3 * vw),
+                  //       child: Text(
+                  //         'or',
+                  //         style: TextStyle(
+                  //             fontSize: 3.0 * vw,
+                  //             color: const Color(0xFF3A3028)),
+                  //       ),
+                  //     ),
+                  //     const Expanded(
+                  //         child: Divider(color: Color(0xFF1E1E1A), height: 1)),
+                  //   ],
+                  // ),
+                  // SizedBox(height: 4 * vh),
 
-            // ── Form fields ─────────────────────────────────────────────
-            _OBTextField(
-              controller: _firstNameController,
-              hint: 'First name',
-              keyboardType: TextInputType.name,
-              textInputAction: TextInputAction.next,
-              vw: vw,
-              vh: vh,
-            ),
-            SizedBox(height: 1.5 * vh),
-            _OBTextField(
-              controller: _lastNameController,
-              hint: 'Last name (optional)',
-              keyboardType: TextInputType.name,
-              textInputAction: TextInputAction.next,
-              vw: vw,
-              vh: vh,
-            ),
-            SizedBox(height: 1.5 * vh),
-            _OBTextField(
-              controller: _emailController,
-              hint: 'Email address',
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.next,
-              vw: vw,
-              vh: vh,
-            ),
-            SizedBox(height: 1.5 * vh),
-            _OBTextField(
-              controller: _passwordController,
-              hint: 'Password',
-              obscureText: _obscurePassword,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _submit(),
-              vw: vw,
-              vh: vh,
-              suffix: GestureDetector(
-                onTap: () =>
-                    setState(() => _obscurePassword = !_obscurePassword),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 3 * vw),
-                  child: Icon(
-                    _obscurePassword
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined,
-                    color: const Color(0xFF5A4A3A),
-                    size: 5 * vw,
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(height: 1.5 * vh),
-            PasswordRequirementsChecklist(
-              controller: _passwordController,
-              vw: vw,
-              vh: vh,
-            ),
-            SizedBox(height: 3 * vh),
+                  // // ── Google ────────────────────────────────────────────────────
+                  // _OBOAuthButton(
+                  //   label: 'Sign up with Google',
+                  //   icon: Text(
+                  //     'G',
+                  //     style: TextStyle(
+                  //       fontSize: 5 * vw,
+                  //       fontWeight: FontWeight.w700,
+                  //       color: const Color(0xFF4285F4),
+                  //     ),
+                  //   ),
+                  //   loading: state.loadingGoogle,
+                  //   disabled: state.isLoading,
+                  //   onTap: notifier.signInWithGoogle,
+                  //   vh: vh,
+                  //   vw: vw,
+                  // ),
 
-            // ── Create Account button ───────────────────────────────────────
-            GestureDetector(
-              onTap: state.isLoading ? null : _submit,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                width: double.infinity,
-                padding: EdgeInsets.symmetric(vertical: 2.1 * vh),
-                decoration: BoxDecoration(
-                  gradient: state.isLoading
-                      ? null
-                      : const LinearGradient(
-                          colors: [Color(0xFFC9A96E), Color(0xFF8B6914)],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ),
-                  color: state.isLoading ? const Color(0xFF141414) : null,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: state.isLoading
-                        ? const Color(0xFF222220)
-                        : Colors.transparent,
-                  ),
-                  boxShadow: state.isLoading
-                      ? []
-                      : [
-                          BoxShadow(
-                            color: const Color(0xFFC9A96E).withValues(alpha: 0.22),
-                            blurRadius: 16,
-                            offset: const Offset(0, 3),
-                          )
-                        ],
-                ),
-                child: Center(
-                  child: state.loadingEmail
-                      ? SizedBox(
-                          width: 5.5 * vw,
-                          height: 5.5 * vw,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: state.isLoading
-                                ? const Color(0xFF4A4A4A)
-                                : const Color(0xFF0D0D0D),
-                          ),
-                        )
-                      : Text(
-                          'Create Account',
-                          style: TextStyle(
-                            fontSize: 3.4 * vw,
-                            fontWeight: FontWeight.w700,
-                            color: state.isLoading
-                                ? const Color(0xFF3A3A3A)
-                                : const Color(0xFF0D0D0D),
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                ),
-              ),
-            ),
-            SizedBox(height: 4 * vh),
-
-            // ── Divider ────────────────────────────────────────────────────
-            // Row(
-            //   children: [
-            //     const Expanded(
-            //         child: Divider(color: Color(0xFF1E1E1A), height: 1)),
-            //     Padding(
-            //       padding: EdgeInsets.symmetric(horizontal: 3 * vw),
-            //       child: Text(
-            //         'or',
-            //         style: TextStyle(
-            //             fontSize: 3.0 * vw,
-            //             color: const Color(0xFF3A3028)),
-            //       ),
-            //     ),
-            //     const Expanded(
-            //         child: Divider(color: Color(0xFF1E1E1A), height: 1)),
-            //   ],
-            // ),
-            // SizedBox(height: 4 * vh),
-
-            // // ── Google ────────────────────────────────────────────────────
-            // _OBOAuthButton(
-            //   label: 'Sign up with Google',
-            //   icon: Text(
-            //     'G',
-            //     style: TextStyle(
-            //       fontSize: 5 * vw,
-            //       fontWeight: FontWeight.w700,
-            //       color: const Color(0xFF4285F4),
-            //     ),
-            //   ),
-            //   loading: state.loadingGoogle,
-            //   disabled: state.isLoading,
-            //   onTap: notifier.signInWithGoogle,
-            //   vh: vh,
-            //   vw: vw,
-            // ),
-
-            // // ── Apple (iOS only) ─────────────────────────────────────────────
-            // if (Platform.isIOS) ...[
-            //   SizedBox(height: 1.5 * vh),
-            //   _OBOAuthButton(
-            //     label: 'Sign up with Apple',
-            //     icon: Text(
-            //       '\uF8FF',
-            //       style: TextStyle(
-            //           fontSize: 5.5 * vw, color: const Color(0xFFE8DCC8)),
-            //     ),
-            //     loading: state.loadingApple,
-            //     disabled: state.isLoading,
-            //     onTap: notifier.signInWithApple,
-            //     vh: vh,
-            //     vw: vw,
-            //   ),
-            // ],
-            // SizedBox(height: 4 * vh),
+                  // // ── Apple (iOS only) ─────────────────────────────────────────────
+                  // if (Platform.isIOS) ...[
+                  //   SizedBox(height: 1.5 * vh),
+                  //   _OBOAuthButton(
+                  //     label: 'Sign up with Apple',
+                  //     icon: Text(
+                  //       '\uF8FF',
+                  //       style: TextStyle(
+                  //           fontSize: 5.5 * vw, color: const Color(0xFFE8DCC8)),
+                  //     ),
+                  //     loading: state.loadingApple,
+                  //     disabled: state.isLoading,
+                  //     onTap: notifier.signInWithApple,
+                  //     vh: vh,
+                  //     vw: vw,
+                  //   ),
+                  // ],
+                  // SizedBox(height: 4 * vh),
                 ],
               ),
             ),
@@ -1200,13 +1228,17 @@ class _OBTextField extends StatelessWidget {
       cursorColor: const Color(0xFFC9A96E),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle:
-            TextStyle(fontSize: 4.0 * vw, color: const Color(0xFF3A2E24)),
+        hintStyle: TextStyle(
+          fontSize: 4.0 * vw,
+          color: const Color(0xFF3A2E24),
+        ),
         suffixIcon: suffix,
         filled: true,
         fillColor: const Color(0xFF111111),
-        contentPadding:
-            EdgeInsets.symmetric(horizontal: 4.5 * vw, vertical: 2 * vh),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: 4.5 * vw,
+          vertical: 2 * vh,
+        ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFF2A2520)),
@@ -1254,8 +1286,7 @@ class _OBOAuthButton extends StatelessWidget {
           color: const Color(0xFF111111),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color:
-                disabled ? const Color(0xFF1E1E1A) : const Color(0xFF2A2520),
+            color: disabled ? const Color(0xFF1E1E1A) : const Color(0xFF2A2520),
           ),
         ),
         child: loading
@@ -1303,6 +1334,8 @@ class _QuestionsPage extends StatelessWidget {
   final Map<int, dynamic> answers;
   final bool canProceed;
   final bool isLast;
+  final bool isSaving;
+  final String? saveError;
   final bool Function(int, String) isSelected;
   final void Function(int, String, _StepType) onSelect;
   final VoidCallback onNext;
@@ -1320,6 +1353,8 @@ class _QuestionsPage extends StatelessWidget {
     required this.answers,
     required this.canProceed,
     required this.isLast,
+    required this.isSaving,
+    required this.saveError,
     required this.isSelected,
     required this.onSelect,
     required this.onNext,
@@ -1378,8 +1413,8 @@ class _QuestionsPage extends StatelessWidget {
                       color: done
                           ? const Color(0xFFC9A96E)
                           : active
-                              ? const Color(0xFFE8DCC8)
-                              : const Color(0xFF1E1E1A),
+                          ? const Color(0xFFE8DCC8)
+                          : const Color(0xFF1E1E1A),
                     ),
                   ),
                 ),
@@ -1521,7 +1556,8 @@ class _QuestionsPage extends StatelessWidget {
             ...step.options.asMap().entries.map(
               (entry) => _OptionTile(
                 label: entry.value,
-                description: step.optionDescriptions != null &&
+                description:
+                    step.optionDescriptions != null &&
                         entry.key < step.optionDescriptions!.length
                     ? step.optionDescriptions![entry.key]
                     : null,
@@ -1587,104 +1623,138 @@ class _QuestionsPage extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: Color(0xFF181815), width: 1)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Back
-          GestureDetector(
-            onTap: onBack,
-            child: Container(
-              padding:
-                  EdgeInsets.symmetric(horizontal: 4.8 * vw, vertical: 2 * vh),
-              decoration: BoxDecoration(
-                color: const Color(0xFF111111),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF2A2520)),
-              ),
-              child: Icon(
-                Icons.arrow_back_ios_new_rounded,
-                color: const Color(0xFF6A5A4A),
-                size: 4.5 * vw,
+          if (saveError != null) ...[
+            Text(
+              saveError!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: const Color(0xFFE08080),
+                fontSize: 3.1 * vw,
+                height: 1.35,
               ),
             ),
-          ),
-          SizedBox(width: 3 * vw),
-          // Continue / Enter
-          Expanded(
-            child: GestureDetector(
-            onTap: canProceed ? onNext : null,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                padding: EdgeInsets.symmetric(vertical: 2.1 * vh),
-                decoration: isLast
-                    ? BoxDecoration(
-                        gradient: canProceed
-                            ? const LinearGradient(
-                                colors: [Color(0xFFC9A96E), Color(0xFF8B6914)],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              )
-                            : null,
-                        color: canProceed ? null : const Color(0xFF141414),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: canProceed
-                              ? Colors.transparent
-                              : const Color(0xFF222220),
-                        ),
-                        boxShadow: canProceed
-                            ? [
-                                BoxShadow(
-                                  color: const Color(0xFFC9A96E)
-                                      .withValues(alpha: 0.25),
-                                  blurRadius: 18,
-                                  offset: const Offset(0, 3),
-                                )
-                              ]
-                            : [],
-                      )
-                    : BoxDecoration(
-                        color: canProceed
-                            ? const Color(0xFF181410)
-                            : const Color(0xFF111111),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: canProceed
-                              ? const Color(0xFF3D2E14)
-                              : const Color(0xFF1E1E1A),
-                        ),
-                      ),
-                child: Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        isLast ? 'FINISH' : 'CONTINUE',
-                        style: TextStyle(
-                          fontSize: 3.4 * vw,
-                          fontWeight: FontWeight.w700,
-                          color: canProceed
-                              ? (isLast
-                                  ? const Color(0xFF0D0D0D)
-                                  : const Color(0xFFE8DCC8))
-                              : const Color(0xFF2E2E2A),
-                          letterSpacing: 2.2,
-                        ),
-                      ),
-                      if (canProceed) ...[  
-                        SizedBox(width: 2.5 * vw),
-                        Icon(
-                          Icons.arrow_forward,
-                          color: isLast
-                              ? const Color(0xFF0D0D0D)
-                              : const Color(0xFFC9A96E),
-                          size: 4 * vw,
-                        ),
-                      ],
-                    ],
+            SizedBox(height: 1.5 * vh),
+          ],
+          Row(
+            children: [
+              // Back
+              GestureDetector(
+                onTap: isSaving ? null : onBack,
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 4.8 * vw,
+                    vertical: 2 * vh,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF111111),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF2A2520)),
+                  ),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: const Color(0xFF6A5A4A),
+                    size: 4.5 * vw,
                   ),
                 ),
               ),
-            ),
+              SizedBox(width: 3 * vw),
+              // Continue / Enter
+              Expanded(
+                child: GestureDetector(
+                  onTap: canProceed && !isSaving ? onNext : null,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    padding: EdgeInsets.symmetric(vertical: 2.1 * vh),
+                    decoration: isLast
+                        ? BoxDecoration(
+                            gradient: canProceed
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color(0xFFC9A96E),
+                                      Color(0xFF8B6914),
+                                    ],
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                  )
+                                : null,
+                            color: canProceed ? null : const Color(0xFF141414),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: canProceed
+                                  ? Colors.transparent
+                                  : const Color(0xFF222220),
+                            ),
+                            boxShadow: canProceed
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(
+                                        0xFFC9A96E,
+                                      ).withValues(alpha: 0.25),
+                                      blurRadius: 18,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ]
+                                : [],
+                          )
+                        : BoxDecoration(
+                            color: canProceed
+                                ? const Color(0xFF181410)
+                                : const Color(0xFF111111),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: canProceed
+                                  ? const Color(0xFF3D2E14)
+                                  : const Color(0xFF1E1E1A),
+                            ),
+                          ),
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isSaving
+                                ? 'SAVING'
+                                : (isLast ? 'FINISH' : 'CONTINUE'),
+                            style: TextStyle(
+                              fontSize: 3.4 * vw,
+                              fontWeight: FontWeight.w700,
+                              color: canProceed
+                                  ? (isLast
+                                        ? const Color(0xFF0D0D0D)
+                                        : const Color(0xFFE8DCC8))
+                                  : const Color(0xFF2E2E2A),
+                              letterSpacing: 2.2,
+                            ),
+                          ),
+                          if (isSaving)
+                            SizedBox(
+                              width: 4 * vw,
+                              height: 4 * vw,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF0D0D0D),
+                              ),
+                            )
+                          else if (canProceed) ...[
+                            SizedBox(width: 2.5 * vw),
+                            Icon(
+                              Icons.arrow_forward,
+                              color: isLast
+                                  ? const Color(0xFF0D0D0D)
+                                  : const Color(0xFFC9A96E),
+                              size: 4 * vw,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1710,8 +1780,7 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding:
-          EdgeInsets.symmetric(horizontal: 2.8 * vw, vertical: 0.45 * vh),
+      padding: EdgeInsets.symmetric(horizontal: 2.8 * vw, vertical: 0.45 * vh),
       decoration: BoxDecoration(
         color: isGold
             ? const Color(0xFF3D2E14).withValues(alpha: 0.35)
@@ -1727,8 +1796,7 @@ class _Badge extends StatelessWidget {
         label,
         style: TextStyle(
           fontSize: 2.8 * vw,
-          color:
-              isGold ? const Color(0xFF9A7830) : const Color(0xFF7A6A50),
+          color: isGold ? const Color(0xFF9A7830) : const Color(0xFF7A6A50),
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -1771,9 +1839,7 @@ class _OptionTile extends StatelessWidget {
           color: selected ? const Color(0xFF1A1208) : const Color(0xFF0F0F0E),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected
-                ? const Color(0xFFC9A96E)
-                : const Color(0xFF222220),
+            color: selected ? const Color(0xFFC9A96E) : const Color(0xFF222220),
             width: selected ? 1.5 : 1.0,
           ),
           boxShadow: selected
@@ -1782,7 +1848,7 @@ class _OptionTile extends StatelessWidget {
                     color: const Color(0xFFC9A96E).withValues(alpha: 0.09),
                     blurRadius: 14,
                     spreadRadius: 1,
-                  )
+                  ),
                 ]
               : [],
         ),
@@ -1801,17 +1867,17 @@ class _OptionTile extends StatelessWidget {
                 borderRadius: type == _StepType.multiSelect
                     ? BorderRadius.circular(4)
                     : null,
-                color: selected
-                    ? const Color(0xFFC9A96E)
-                    : Colors.transparent,
+                color: selected ? const Color(0xFFC9A96E) : Colors.transparent,
                 border: selected
                     ? null
-                    : Border.all(
-                        color: const Color(0xFF3A3530), width: 1.5),
+                    : Border.all(color: const Color(0xFF3A3530), width: 1.5),
               ),
               child: selected
-                  ? Icon(Icons.check,
-                      color: const Color(0xFF0D0D0D), size: 3.0 * vw)
+                  ? Icon(
+                      Icons.check,
+                      color: const Color(0xFF0D0D0D),
+                      size: 3.0 * vw,
+                    )
                   : null,
             ),
             SizedBox(width: 4 * vw),
@@ -1828,8 +1894,7 @@ class _OptionTile extends StatelessWidget {
                       color: selected
                           ? const Color(0xFFE8DCC8)
                           : const Color(0xFF8A7A6A),
-                      fontWeight:
-                          selected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     ),
                   ),
                   if (hasDesc) ...[

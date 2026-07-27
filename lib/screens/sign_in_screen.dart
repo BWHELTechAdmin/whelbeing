@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +6,8 @@ import '../providers/sign_in_provider.dart';
 import '../utils/size_config.dart';
 import '../utils/validators.dart';
 import '../widgets/password_requirements.dart';
+import 'email_verification_screen.dart';
+import 'forgot_password_screen.dart';
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,14 @@ import '../widgets/password_requirements.dart';
 /// below a divider. All auth logic lives in [SignInNotifier] / [AuthRepository].
 /// The screen auto-pops when [isAuthenticatedProvider] flips to true.
 class SignInScreen extends ConsumerStatefulWidget {
-  const SignInScreen({super.key});
+  const SignInScreen({
+    super.key,
+    this.showBackButton = true,
+    this.initialError,
+  });
+
+  final bool showBackButton;
+  final String? initialError;
 
   @override
   ConsumerState<SignInScreen> createState() => _SignInScreenState();
@@ -31,6 +38,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   bool _isSignUp = false;
   bool _obscurePassword = true;
   String? _localError;
+  @override
+  void initState() {
+    super.initState();
+    _localError = widget.initialError;
+  }
 
   @override
   void dispose() {
@@ -41,10 +53,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
-    if (email.isEmpty || password.isEmpty) return;
+    final emailError = Validators.email(email);
+    if (emailError != null || password.isEmpty) {
+      setState(
+        () => _localError = emailError ?? 'Enter your password to continue.',
+      );
+      return;
+    }
     final notifier = ref.read(signInProvider.notifier);
 
     if (!_isSignUp) {
@@ -63,7 +81,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     }
 
     setState(() => _localError = null);
-    notifier.signUpWithEmail(
+    final didSignUp = await notifier.signUpWithEmail(
       email,
       password,
       firstName: firstName,
@@ -71,12 +89,40 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
           ? null
           : _lastNameController.text.trim(),
     );
+    if (didSignUp && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => EmailVerificationScreen(
+            email: email,
+            password: password,
+            onVerified: () => Navigator.of(context).pop(),
+          ),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     ref.listen<bool>(isAuthenticatedProvider, (_, isAuthenticated) {
-      if (isAuthenticated && context.mounted) Navigator.of(context).pop();
+      if (isAuthenticated && context.mounted && widget.showBackButton) {
+        Navigator.of(context).pop();
+      }
+    });
+    ref.listen<String?>(pendingEmailVerificationProvider, (_, email) {
+      if (email == null || !context.mounted || !widget.showBackButton) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => EmailVerificationScreen(
+            email: email,
+            onVerified: () => Navigator.of(context).pop(),
+            onBack: () {
+              ref.read(pendingEmailVerificationProvider.notifier).state = null;
+              Navigator.of(context).pop();
+            },
+          ),
+        ),
+      );
     });
 
     SizeConfig.init(context);
@@ -84,8 +130,6 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     final vw = SizeConfig.vw;
 
     final state = ref.watch(signInProvider);
-    final notifier = ref.read(signInProvider.notifier);
-
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D0D),
       resizeToAvoidBottomInset: true,
@@ -94,17 +138,18 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Back ──────────────────────────────────────────────────────
-            Padding(
-              padding: EdgeInsets.fromLTRB(5 * vw, 2 * vh, 0, 0),
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  color: const Color(0xFF6A5A4A),
-                  size: 5.5 * vw,
+            if (widget.showBackButton)
+              Padding(
+                padding: EdgeInsets.fromLTRB(5 * vw, 2 * vh, 0, 0),
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: const Color(0xFF6A5A4A),
+                    size: 5.5 * vw,
+                  ),
                 ),
               ),
-            ),
 
             // ── Scrollable body ───────────────────────────────────────────
             Expanded(
@@ -143,7 +188,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 
                     // Error banner
                     if (_localError != null || state.error != null) ...[
-                      _ErrorBanner(message: _localError ?? state.error!, vw: vw, vh: vh),
+                      _ErrorBanner(
+                        message: _localError ?? state.error!,
+                        vw: vw,
+                        vh: vh,
+                      ),
                       SizedBox(height: 2.5 * vh),
                     ],
 
@@ -175,6 +224,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       hint: 'Email address',
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.email],
                       vw: vw,
                       vh: vh,
                     ),
@@ -187,11 +237,13 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       obscureText: _obscurePassword,
                       textInputAction: TextInputAction.done,
                       onSubmitted: (_) => _submit(),
+                      autofillHints: const [AutofillHints.password],
                       vw: vw,
                       vh: vh,
                       suffix: GestureDetector(
                         onTap: () => setState(
-                            () => _obscurePassword = !_obscurePassword),
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
                         child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 3 * vw),
                           child: Icon(
@@ -216,22 +268,31 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     ],
 
                     // Forgot password — sign-in mode only
-                    // if (!_isSignUp) ...[
-                    //   SizedBox(height: 1.5 * vh),
-                    //   Align(
-                    //     alignment: Alignment.centerRight,
-                    //     child: GestureDetector(
-                    //       onTap: () {/* TODO: forgot password */},
-                    //       child: Text(
-                    //         'Forgot password?',
-                    //         style: TextStyle(
-                    //           fontSize: 3.0 * vw,
-                    //           color: const Color(0xFF6A5A4A),
-                    //         ),
-                    //       ),
-                    //     ),
-                    //   ),
-                    // ],
+                    if (!_isSignUp) ...[
+                      SizedBox(height: 1.5 * vh),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: GestureDetector(
+                          onTap: state.isLoading
+                              ? null
+                              : () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const ForgotPasswordScreen(),
+                                  ),
+                                ),
+                          child: Text(
+                            'Forgot password?',
+                            style: TextStyle(
+                              fontSize: 3.0 * vw,
+                              color: const Color(0xFF9A7830),
+                              decoration: TextDecoration.underline,
+                              decorationColor: const Color(0xFF9A7830),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     SizedBox(height: 3 * vh),
 
                     // Email submit button
@@ -291,8 +352,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     // Sign-in / sign-up toggle
                     Center(
                       child: GestureDetector(
-                        onTap: () =>
-                            setState(() => _isSignUp = !_isSignUp),
+                        onTap: () => setState(() => _isSignUp = !_isSignUp),
                         child: RichText(
                           text: TextSpan(
                             style: TextStyle(fontSize: 3.2 * vw),
@@ -302,7 +362,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                                     ? 'Already a member?  '
                                     : "Don't have an account?  ",
                                 style: const TextStyle(
-                                    color: Color(0xFF4A3A2A)),
+                                  color: Color(0xFF4A3A2A),
+                                ),
                               ),
                               TextSpan(
                                 text: _isSignUp ? 'Sign in' : 'Sign up',
@@ -331,8 +392,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 // ─── Helper widgets ─────────────────────────────────────────────────────────────────
 
 class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner(
-      {required this.message, required this.vw, required this.vh});
+  const _ErrorBanner({
+    required this.message,
+    required this.vw,
+    required this.vh,
+  });
 
   final String message;
   final double vw;
@@ -369,6 +433,7 @@ class _InputField extends StatelessWidget {
     this.textInputAction,
     this.onSubmitted,
     this.suffix,
+    this.autofillHints,
     required this.vw,
     required this.vh,
   });
@@ -380,6 +445,7 @@ class _InputField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onSubmitted;
   final Widget? suffix;
+  final Iterable<String>? autofillHints;
   final double vw;
   final double vh;
 
@@ -391,17 +457,24 @@ class _InputField extends StatelessWidget {
       obscureText: obscureText,
       textInputAction: textInputAction,
       onSubmitted: onSubmitted,
+      autofillHints: autofillHints,
+      autocorrect: false,
+      enableSuggestions: false,
       style: TextStyle(fontSize: 4.0 * vw, color: const Color(0xFFE8DCC8)),
       cursorColor: const Color(0xFFC9A96E),
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(
-            fontSize: 4.0 * vw, color: const Color(0xFF3A2E24)),
+          fontSize: 4.0 * vw,
+          color: const Color(0xFF3A2E24),
+        ),
         suffixIcon: suffix,
         filled: true,
         fillColor: const Color(0xFF111111),
-        contentPadding:
-            EdgeInsets.symmetric(horizontal: 4.5 * vw, vertical: 2 * vh),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: 4.5 * vw,
+          vertical: 2 * vh,
+        ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFF2A2520)),
@@ -463,7 +536,7 @@ class _SubmitButton extends StatelessWidget {
                     color: const Color(0xFFC9A96E).withValues(alpha: 0.22),
                     blurRadius: 16,
                     offset: const Offset(0, 3),
-                  )
+                  ),
                 ],
         ),
         child: Center(
@@ -509,7 +582,10 @@ class _OrDivider extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: 3 * vw),
           child: Text(
             'or',
-            style: TextStyle(fontSize: 3.0 * vw, color: const Color(0xFF3A3028)),
+            style: TextStyle(
+              fontSize: 3.0 * vw,
+              color: const Color(0xFF3A3028),
+            ),
           ),
         ),
         const Expanded(child: Divider(color: Color(0xFF1E1E1A), height: 1)),
@@ -551,9 +627,7 @@ class _AuthButton extends StatelessWidget {
           color: const Color(0xFF111111),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: loading
-                ? const Color(0xFF1E1E1A)
-                : const Color(0xFF2A2520),
+            color: loading ? const Color(0xFF1E1E1A) : const Color(0xFF2A2520),
           ),
         ),
         child: loading
