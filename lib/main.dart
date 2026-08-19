@@ -83,14 +83,54 @@ class WhelbeingApp extends StatelessWidget {
 ///
 /// Both decisions are driven by Riverpod providers, so no [StreamSubscription]
 /// or [setState] boilerplate is needed here.
-class _AppEntry extends ConsumerWidget {
+class _AppEntry extends ConsumerStatefulWidget {
   const _AppEntry();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AppEntry> createState() => _AppEntryState();
+}
+
+class _AppEntryState extends ConsumerState<_AppEntry> {
+  bool _recoveryRouteOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<AuthCallbackState>(authCallbackStateProvider, (_, next) {
+      if (next.kind == AuthCallbackKind.passwordRecovery &&
+          (next.isProcessing || next.hasError)) {
+        _openPasswordRecovery();
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final callbackState = ref.read(authCallbackStateProvider);
+      if (callbackState.kind == AuthCallbackKind.passwordRecovery &&
+          (callbackState.isProcessing || callbackState.hasError)) {
+        _openPasswordRecovery();
+      }
+    });
+  }
+
+  void _openPasswordRecovery() {
+    if (!mounted || _recoveryRouteOpen) return;
+    _recoveryRouteOpen = true;
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ResetPasswordScreen()))
+        .whenComplete(() {
+          if (mounted) _recoveryRouteOpen = false;
+        });
+  }
+
+  void _returnToWelcome() {
+    ref.read(authCallbackHandlerProvider).clear();
+    ref.read(pendingEmailVerificationProvider.notifier).state = null;
+    ref.read(signedOutEntryProvider.notifier).state = SignedOutEntry.onboarding;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final isAuthenticated = ref.watch(isAuthenticatedProvider);
     final isEmailVerified = ref.watch(isEmailVerifiedProvider);
-    final authState = ref.watch(authStateChangesProvider).valueOrNull;
     final callbackState = ref.watch(authCallbackStateProvider);
     final pendingVerificationEmail = ref.watch(
       pendingEmailVerificationProvider,
@@ -129,9 +169,6 @@ class _AppEntry extends ConsumerWidget {
         }
       }
     });
-    final isPasswordRecovery =
-        authState?.event == AuthChangeEvent.passwordRecovery ||
-        ref.watch(passwordRecoveryInProgressProvider);
     final signedOutEntry = ref.watch(signedOutEntryProvider);
     // Persisted flag — true only if the user has previously finished onboarding
     // on any device (stored in Supabase user metadata).
@@ -144,21 +181,15 @@ class _AppEntry extends ConsumerWidget {
     //   (a) Returning user — authenticated + persisted flag, OR
     //   (b) Just finished — local flag set this session (covers both
     //       authenticated users and users who skip sign-in entirely).
-    if (callbackState.kind == AuthCallbackKind.passwordRecovery) {
-      return ResetPasswordScreen(
-        callbackError: callbackState.errorMessage,
-        isProcessingCallback: callbackState.isProcessing,
-      );
-    }
-
-    if (isPasswordRecovery) {
-      return const ResetPasswordScreen();
-    }
 
     if (pendingVerificationEmail != null &&
         !(isAuthenticated && isEmailVerified)) {
       return EmailVerificationScreen(
         email: pendingVerificationEmail,
+        autoCheckVerification:
+            callbackState.kind == AuthCallbackKind.emailConfirmation &&
+            !callbackState.isProcessing &&
+            !callbackState.hasError,
         onVerified: () =>
             ref.read(pendingEmailVerificationProvider.notifier).state = null,
         onBack: () {
@@ -170,10 +201,11 @@ class _AppEntry extends ConsumerWidget {
     }
 
     if (callbackState.kind == AuthCallbackKind.emailConfirmation &&
-        callbackState.hasError) {
+        callbackState.hasError &&
+        !isAuthenticated) {
       return SignInScreen(
-        showBackButton: false,
         initialError: callbackState.errorMessage,
+        onBack: _returnToWelcome,
       );
     }
 
@@ -186,13 +218,23 @@ class _AppEntry extends ConsumerWidget {
       if (email != null) {
         return EmailVerificationScreen(
           email: email,
+          autoCheckVerification:
+              callbackState.kind == AuthCallbackKind.emailConfirmation &&
+              !callbackState.isProcessing &&
+              !callbackState.hasError,
           onVerified: () => ref.invalidate(authStateChangesProvider),
+          onBack: () {
+            ref.read(authCallbackHandlerProvider).clear();
+            ref.read(signedOutEntryProvider.notifier).state =
+                SignedOutEntry.signIn;
+            ref.read(authRepositoryProvider).signOut().ignore();
+          },
         );
       }
     }
 
     if (!isAuthenticated && signedOutEntry == SignedOutEntry.signIn) {
-      return const SignInScreen(showBackButton: false);
+      return SignInScreen(onBack: _returnToWelcome);
     }
 
     return HealthProfileOnboarding(

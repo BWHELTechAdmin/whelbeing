@@ -1,17 +1,121 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
+
+import '../providers/auth_provider.dart';
+import '../repositories/auth_repository.dart';
 import '../services/biometric_service.dart';
 import '../utils/size_config.dart';
 
-class PrivacyScreen extends StatefulWidget {
+class PrivacyScreen extends ConsumerStatefulWidget {
   const PrivacyScreen({super.key});
 
   @override
-  State<PrivacyScreen> createState() => _PrivacyScreenState();
+  ConsumerState<PrivacyScreen> createState() => _PrivacyScreenState();
 }
 
-class _PrivacyScreenState extends State<PrivacyScreen> {
+class _PrivacyScreenState extends ConsumerState<PrivacyScreen> {
   bool _analyticsSharing = true;
   bool _crashReports = true;
+  bool _isSendingPasswordReset = false;
+  bool _isDeletingAccount = false;
+
+  Future<void> _sendPasswordReset() async {
+    final email = ref.read(currentUserProvider)?.email;
+    if (email == null || email.isEmpty) {
+      _showMessage(
+        'We could not find an email address for this account.',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _isSendingPasswordReset = true);
+    try {
+      await ref.read(authRepositoryProvider).requestPasswordReset(email);
+      if (!mounted) return;
+      _showMessage('Password reset link sent to your email.');
+    } on EmailRequestCooldownException catch (e) {
+      if (!mounted) return;
+      _showMessage(e.message, isError: true);
+    } on AuthException {
+      if (!mounted) return;
+      _showMessage(
+        'We could not send a password reset link right now. Please try again.',
+        isError: true,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage(
+        'We could not send a password reset link right now. Please try again.',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isSendingPasswordReset = false);
+    }
+  }
+
+  void _showMessage(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError
+            ? Colors.red.shade700
+            : const Color(0xFFC9A96E),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _deleteAccount() async {
+    if (_isDeletingAccount) return;
+    setState(() => _isDeletingAccount = true);
+    try {
+      await ref.read(authRepositoryProvider).deleteAccount();
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage(
+        'We could not delete your account. Please try again.',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isDeletingAccount = false);
+    }
+  }
+
+  void _confirmAccountDeletion() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Account?'),
+        content: const Text(
+          'This will permanently delete your account, health records, and other associated data. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: _isDeletingAccount
+                ? null
+                : () => Navigator.of(ctx).pop(),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFFC9A96E)),
+            ),
+          ),
+          TextButton(
+            onPressed: _isDeletingAccount
+                ? null
+                : () {
+                    Navigator.of(ctx).pop();
+                    _deleteAccount();
+                  },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,15 +137,8 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               'Change Password',
               'Update your account password',
               Icons.lock_outline,
-              () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Password reset link sent to your email'),
-                    backgroundColor: Color(0xFFC9A96E),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
+              _isSendingPasswordReset ? null : _sendPasswordReset,
+              isLoading: _isSendingPasswordReset,
             ),
           ]),
           _buildSection('Data', [
@@ -63,50 +160,17 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               'Download My Data',
               'Get a copy of all your personal data',
               Icons.download_outlined,
-              () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Your data export will be emailed to you shortly',
-                    ),
-                    backgroundColor: Color(0xFFC9A96E),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
+              () => _showMessage(
+                'Your data export will be emailed to you shortly',
+              ),
             ),
             _buildActionTile(
               'Delete Account',
               'Permanently delete your account and data',
               Icons.delete_outline,
-              () {
-                showDialog(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Delete Account?'),
-                    content: const Text(
-                      'This will permanently delete your account and all associated data. This action cannot be undone.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(color: Color(0xFFC9A96E)),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        child: const Text(
-                          'Delete',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+              _isDeletingAccount ? null : _confirmAccountDeletion,
               isDestructive: true,
+              isLoading: _isDeletingAccount,
             ),
           ]),
         ],
@@ -246,8 +310,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     String title,
     String subtitle,
     IconData icon,
-    VoidCallback onTap, {
+    VoidCallback? onTap, {
     bool isDestructive = false,
+    bool isLoading = false,
   }) {
     final vh = SizeConfig.vh;
     final vw = SizeConfig.vw;
@@ -294,13 +359,22 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
             subtitle,
             style: TextStyle(fontSize: 12, color: Colors.grey[400]),
           ),
-          trailing: Icon(
-            Icons.arrow_forward_ios,
-            size: 4.0 * vw,
-            color: isDestructive
-                ? Colors.red.withValues(alpha: 0.5)
-                : const Color(0xFFC9A96E),
-          ),
+          trailing: isLoading
+              ? SizedBox(
+                  width: 4.0 * vw,
+                  height: 4.0 * vw,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFFC9A96E),
+                  ),
+                )
+              : Icon(
+                  Icons.arrow_forward_ios,
+                  size: 4.0 * vw,
+                  color: isDestructive
+                      ? Colors.red.withValues(alpha: 0.5)
+                      : const Color(0xFFC9A96E),
+                ),
           onTap: onTap,
         ),
       ),

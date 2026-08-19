@@ -21,10 +21,12 @@ class SignInScreen extends ConsumerStatefulWidget {
     super.key,
     this.showBackButton = true,
     this.initialError,
+    this.onBack,
   });
 
   final bool showBackButton;
   final String? initialError;
+  final VoidCallback? onBack;
 
   @override
   ConsumerState<SignInScreen> createState() => _SignInScreenState();
@@ -51,6 +53,14 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _goBack() {
+    if (widget.onBack != null) {
+      widget.onBack!();
+      return;
+    }
+    Navigator.of(context).maybePop();
   }
 
   Future<void> _submit() async {
@@ -96,6 +106,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             email: email,
             password: password,
             onVerified: () => Navigator.of(context).pop(),
+            onBack: () => Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const SignInScreen()),
+            ),
           ),
         ),
       );
@@ -142,7 +155,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
               Padding(
                 padding: EdgeInsets.fromLTRB(5 * vw, 2 * vh, 0, 0),
                 child: GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
+                  onTap: _goBack,
                   child: Icon(
                     Icons.arrow_back_ios_new_rounded,
                     color: const Color(0xFF6A5A4A),

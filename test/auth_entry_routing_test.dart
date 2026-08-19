@@ -68,6 +68,7 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('Return to sign in'), findsOneWidget);
   });

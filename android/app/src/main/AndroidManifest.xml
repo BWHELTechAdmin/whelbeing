@@ -48,6 +48,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- app_links owns Supabase callback URLs; Flutter must not convert
+             them into Navigator routes before the callback handler processes them. -->
+        <meta-data
+            android:name="flutter_deeplinking_enabled"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

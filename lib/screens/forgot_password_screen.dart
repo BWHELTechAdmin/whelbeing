@@ -64,8 +64,8 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
               SizedBox(height: 7 * vh),
               Text(
                 state.isComplete
-                    ? 'Check your\\nemail.'
-                    : 'Reset your\\npassword.',
+                    ? 'Check your\nemail.'
+                    : 'Reset your\npassword.',
                 style: TextStyle(
                   color: const Color(0xFFE8DCC8),
                   fontSize: 9.5 * vw,

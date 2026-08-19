@@ -3,8 +3,10 @@ import 'package:image_picker/image_picker.dart';
 import '../models/user_model.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/user_provider.dart';
+import '../repositories/auth_repository.dart';
 import '../repositories/user_repository.dart';
 import '../utils/size_config.dart';
+import '../utils/validators.dart';
 
 class PersonalInfoScreen extends ConsumerStatefulWidget {
   const PersonalInfoScreen({super.key});
@@ -21,6 +23,8 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
   bool _isSaving = false;
   bool _initialized = false;
   bool _uploadingAvatar = false;
+  String? _originalEmail;
+  String? _requestedEmailChange;
 
   @override
   void dispose() {
@@ -32,30 +36,60 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
   void _populateFromUser(UserModel user) {
     _nameController.text = user.displayName == '—' ? '' : user.displayName;
     _emailController.text = user.email ?? '';
+    _originalEmail = user.email?.trim().toLowerCase();
     _dateOfBirth = user.dateOfBirth;
   }
 
   Future<void> _save() async {
+    final requestedEmail = _emailController.text.trim().toLowerCase();
+    final emailChanged =
+        requestedEmail != _originalEmail &&
+        requestedEmail != _requestedEmailChange;
+    if (emailChanged) {
+      final validationError = Validators.email(requestedEmail);
+      if (validationError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(validationError),
+            backgroundColor: Colors.red.shade800,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
     setState(() => _isSaving = true);
     try {
       final fullName = _nameController.text.trim();
       final spaceIdx = fullName.indexOf(' ');
-      final firstName = spaceIdx == -1 ? fullName : fullName.substring(0, spaceIdx);
+      final firstName = spaceIdx == -1
+          ? fullName
+          : fullName.substring(0, spaceIdx);
       final lastName = spaceIdx == -1 ? '' : fullName.substring(spaceIdx + 1);
 
-      await ref.read(userRepositoryProvider).updateUser(
-        firstName: firstName,
-        lastName: lastName,
-        dateOfBirth: _dateOfBirth,
-      );
+      await ref
+          .read(userRepositoryProvider)
+          .updateUser(
+            firstName: firstName,
+            lastName: lastName,
+            dateOfBirth: _dateOfBirth,
+          );
+      if (emailChanged) {
+        await ref.read(authRepositoryProvider).updateEmail(requestedEmail);
+        _requestedEmailChange = requestedEmail;
+      }
 
       ref.invalidate(currentUserModelProvider);
 
       if (mounted) {
         setState(() => _isEditing = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile updated!'),
+          SnackBar(
+            content: Text(
+              emailChanged
+                  ? 'Profile updated. Check your email to confirm the new address.'
+                  : 'Profile updated!',
+            ),
             backgroundColor: Color(0xFFC9A96E),
             behavior: SnackBarBehavior.floating,
           ),
@@ -120,9 +154,9 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: const Color(0xFFC9A96E),
-            ),
+            colorScheme: Theme.of(
+              context,
+            ).colorScheme.copyWith(primary: const Color(0xFFC9A96E)),
           ),
           child: child!,
         );
@@ -136,8 +170,18 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
   String get _formattedDob {
     if (_dateOfBirth == null) return 'Not set';
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[_dateOfBirth!.month - 1]} ${_dateOfBirth!.day}, ${_dateOfBirth!.year}';
   }
@@ -204,108 +248,113 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
           child: CircularProgressIndicator(color: Color(0xFFC9A96E)),
         ),
         error: (e, _) => Center(
-          child: Text('Failed to load profile: $e',
-              style: const TextStyle(color: Color(0xFFE8DCC8))),
+          child: Text(
+            'Failed to load profile: $e',
+            style: const TextStyle(color: Color(0xFFE8DCC8)),
+          ),
         ),
         data: (_) => SingleChildScrollView(
-        padding: EdgeInsets.all(4.0 * vw),
-        child: Column(
-          children: [
-            SizedBox(height: 1.0 * vh),
-            Center(
-              child: GestureDetector(
-                onTap: _isEditing ? _pickAndUploadAvatar : null,
-                child: Stack(
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(1.0 * vw),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF2A2520),
-                        shape: BoxShape.circle,
+          padding: EdgeInsets.all(4.0 * vw),
+          child: Column(
+            children: [
+              SizedBox(height: 1.0 * vh),
+              Center(
+                child: GestureDetector(
+                  onTap: _isEditing ? _pickAndUploadAvatar : null,
+                  child: Stack(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(1.0 * vw),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF2A2520),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Builder(
+                          builder: (context) {
+                            final avatarUrl = ref
+                                .watch(avatarUrlProvider)
+                                .valueOrNull;
+                            return CircleAvatar(
+                              radius: 12.0 * vw,
+                              backgroundColor: const Color(0xFF1A1A1A),
+                              backgroundImage: avatarUrl != null
+                                  ? NetworkImage(avatarUrl)
+                                  : null,
+                              child: avatarUrl == null
+                                  ? Icon(
+                                      Icons.person,
+                                      size: 12.0 * vw,
+                                      color: const Color(0xFFE8DCC8),
+                                    )
+                                  : null,
+                            );
+                          },
+                        ),
                       ),
-                      child: Builder(builder: (context) {
-                        final avatarUrl =
-                            ref.watch(avatarUrlProvider).valueOrNull;
-                        return CircleAvatar(
-                          radius: 12.0 * vw,
-                          backgroundColor: const Color(0xFF1A1A1A),
-                          backgroundImage: avatarUrl != null
-                              ? NetworkImage(avatarUrl)
-                              : null,
-                          child: avatarUrl == null
-                              ? Icon(
-                                  Icons.person,
-                                  size: 12.0 * vw,
-                                  color: const Color(0xFFE8DCC8),
-                                )
-                              : null,
-                        );
-                      }),
-                    ),
-                    if (_uploadingAvatar)
-                      Positioned.fill(
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Center(
-                            child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: Color(0xFFC9A96E),
+                      if (_uploadingAvatar)
+                        Positioned.fill(
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Color(0xFFC9A96E),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    if (_isEditing)
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          padding: EdgeInsets.all(1.5 * vw),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFC9A96E),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.camera_alt,
-                            color: const Color(0xFF1A1A1A),
-                            size: 4.5 * vw,
+                      if (_isEditing)
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            padding: EdgeInsets.all(1.5 * vw),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFC9A96E),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.camera_alt,
+                              color: const Color(0xFF1A1A1A),
+                              size: 4.5 * vw,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            SizedBox(height: 3.8 * vh),
-            _buildField(
-              label: 'Full Name',
-              controller: _nameController,
-              icon: Icons.person_outline,
-            ),
-            SizedBox(height: 2.0 * vh),
-            _buildField(
-              label: 'Email',
-              controller: _emailController,
-              icon: Icons.email_outlined,
-              keyboardType: TextInputType.emailAddress,
-            ),
-            SizedBox(height: 2.0 * vh),
-            _buildDateField(),
-            SizedBox(height: 2.0 * vh),
-            _buildReadOnlyField(
-              label: 'Member Since',
-              value: memberSince,
-              icon: Icons.calendar_today_outlined,
-            ),
-          ],
+              SizedBox(height: 3.8 * vh),
+              _buildField(
+                label: 'Full Name',
+                controller: _nameController,
+                icon: Icons.person_outline,
+              ),
+              SizedBox(height: 2.0 * vh),
+              _buildField(
+                label: 'Email',
+                controller: _emailController,
+                icon: Icons.email_outlined,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              SizedBox(height: 2.0 * vh),
+              _buildDateField(),
+              SizedBox(height: 2.0 * vh),
+              _buildReadOnlyField(
+                label: 'Member Since',
+                value: memberSince,
+                icon: Icons.calendar_today_outlined,
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -382,7 +431,11 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
         ),
         child: Row(
           children: [
-            Icon(Icons.cake_outlined, color: const Color(0xFFC9A96E), size: 5.5 * vw),
+            Icon(
+              Icons.cake_outlined,
+              color: const Color(0xFFC9A96E),
+              size: 5.5 * vw,
+            ),
             SizedBox(width: 4.0 * vw),
             Expanded(
               child: Column(

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../providers/password_recovery_provider.dart';
 import '../repositories/auth_repository.dart';
+import '../services/auth_callback_handler.dart';
 import '../utils/size_config.dart';
 import '../utils/validators.dart';
 import '../widgets/password_requirements.dart';
@@ -29,6 +30,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
   final _confirmationController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmation = true;
+  bool _isReturningToSignIn = false;
   String? _localError;
 
   @override
@@ -55,10 +57,27 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
   }
 
   Future<void> _returnToSignIn() async {
+    if (_isReturningToSignIn) return;
+    setState(() => _isReturningToSignIn = true);
     ref.read(authCallbackHandlerProvider).clear();
     ref.read(signedOutEntryProvider.notifier).state = SignedOutEntry.signIn;
-    await ref.read(authRepositoryProvider).signOut();
+    try {
+      await ref.read(authRepositoryProvider).signOut();
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () =>
+              _localError = 'We could not open the sign-in screen. Try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isReturningToSignIn = false);
+    }
   }
+
+  void _goBack() => Navigator.of(context).pop();
 
   @override
   Widget build(BuildContext context) {
@@ -66,12 +85,28 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
     final vh = SizeConfig.vh;
     final vw = SizeConfig.vw;
     final state = ref.watch(passwordRecoveryProvider);
+    final callbackState = ref.watch(authCallbackStateProvider);
     final hasRecoverySession = ref.watch(currentSessionProvider) != null;
     final error = _localError ?? state.error;
-    final isExpired = widget.callbackError != null || !hasRecoverySession;
+    final callbackError =
+        callbackState.kind == AuthCallbackKind.passwordRecovery
+        ? callbackState.errorMessage
+        : widget.callbackError;
+    final isProcessingCallback =
+        callbackState.kind == AuthCallbackKind.passwordRecovery
+        ? callbackState.isProcessing
+        : widget.isProcessingCallback;
+    final isExpired = callbackError != null || !hasRecoverySession;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D0D),
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: _isReturningToSignIn ? null : _goBack,
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Back',
+        ),
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(6 * vw, 7 * vh, 6 * vw, 5 * vh),
@@ -80,12 +115,12 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
             children: [
               Text(
                 state.isComplete
-                    ? 'Password\\nupdated.'
-                    : widget.isProcessingCallback
-                    ? 'Opening secure\\nlink.'
+                    ? 'Password\nupdated.'
+                    : isProcessingCallback
+                    ? 'Opening secure\nlink.'
                     : hasRecoverySession
-                    ? 'Choose a new\\npassword.'
-                    : 'This link has\\nexpired.',
+                    ? 'Choose a new\npassword.'
+                    : 'This link has\nexpired.',
                 style: TextStyle(
                   color: const Color(0xFFE8DCC8),
                   fontSize: 9.5 * vw,
@@ -98,11 +133,11 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
               Text(
                 state.isComplete
                     ? 'Your password was changed successfully. Sign in with your new password to continue.'
-                    : widget.isProcessingCallback
+                    : isProcessingCallback
                     ? 'We are securely opening your password reset request.'
                     : hasRecoverySession
                     ? 'Create a strong password that you have not used before.'
-                    : widget.callbackError ??
+                    : callbackError ??
                           'For your security, password reset links can only be used once. Return to sign in to request a new link.',
                 style: TextStyle(
                   color: const Color(0xFF9B8C7A),
@@ -111,7 +146,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                 ),
               ),
               SizedBox(height: 5 * vh),
-              if (widget.isProcessingCallback)
+              if (isProcessingCallback)
                 const Center(
                   child: CircularProgressIndicator(color: Color(0xFFC9A96E)),
                 )
@@ -119,6 +154,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                 _ResetButton(
                   label: 'Sign in',
                   onPressed: _returnToSignIn,
+                  loading: _isReturningToSignIn,
                   vw: vw,
                   vh: vh,
                 )
@@ -126,6 +162,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                 _ResetButton(
                   label: 'Return to sign in',
                   onPressed: _returnToSignIn,
+                  loading: _isReturningToSignIn,
                   vw: vw,
                   vh: vh,
                 )

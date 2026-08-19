@@ -108,6 +108,8 @@ class SignInNotifier extends AutoDisposeNotifier<SignInState> {
             lastName: lastName,
           );
       return true;
+    } on EmailRequestCooldownException catch (e) {
+      state = state.copyWith(error: e.message);
     } on AuthException catch (e) {
       state = state.copyWith(error: e.message);
     } catch (e) {

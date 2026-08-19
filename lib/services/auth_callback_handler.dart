@@ -37,6 +37,8 @@ class AuthCallbackState {
 ///
 /// Capturing the link before the widget tree is created prevents a cold-start
 /// recovery callback from being lost before Riverpod subscribes to auth events.
+/// Native Flutter deep linking is disabled in the iOS and Android manifests so
+/// the engine does not also convert a callback into a Navigator route.
 class AuthCallbackHandler {
   AuthCallbackHandler({AppLinks? appLinks})
     : _appLinks = appLinks ?? AppLinks();

@@ -9,15 +9,33 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../utils/validators.dart';
+
+/// Thrown when an email request is repeated before its cooldown expires.
+class EmailRequestCooldownException implements Exception {
+  const EmailRequestCooldownException(this.retryAfter);
+
+  final Duration retryAfter;
+
+  String get message =>
+      'Please wait ${retryAfter.inSeconds} seconds before requesting another email.';
+
+  @override
+  String toString() => message;
+}
 
 /// Handles all Supabase authentication operations.
 ///
 /// This class is the single place where auth logic lives. Screens and
 /// notifiers depend on this repository rather than calling Supabase directly.
 class AuthRepository {
-  const AuthRepository(this._client);
+  const AuthRepository(this._client, {UpdateUserRequest? updateUser})
+    : _updateUser = updateUser;
 
   final SupabaseClient _client;
+  final UpdateUserRequest? _updateUser;
+  static const _emailRequestCooldown = Duration(seconds: 60);
+  static final Map<String, DateTime> _lastEmailRequests = {};
 
   // ── Google ──────────────────────────────────────────────────────────────────
 
@@ -108,6 +126,7 @@ class AuthRepository {
     String? firstName,
     String? lastName,
   }) async {
+    _debounceEmailRequest(email);
     await _client.auth.signUp(
       email: email,
       password: password,
@@ -141,8 +160,9 @@ class AuthRepository {
   }
 
   /// Sends another confirmation email for a pending email/password sign-up.
-  Future<void> resendEmailVerification(String email) {
-    return _client.auth.resend(
+  Future<void> resendEmailVerification(String email) async {
+    _debounceEmailRequest(email);
+    await _client.auth.resend(
       email: email,
       type: OtpType.signup,
       emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
@@ -150,10 +170,40 @@ class AuthRepository {
   }
 
   /// Sends a password-recovery link without revealing whether [email] exists.
-  Future<void> requestPasswordReset(String email) {
-    return _client.auth.resetPasswordForEmail(
+  Future<void> requestPasswordReset(String email) async {
+    _debounceEmailRequest(email);
+    await _client.auth.resetPasswordForEmail(
       email,
       redirectTo: SupabaseConfig.passwordRecoveryRedirectUrl,
+    );
+  }
+
+  /// Requests a change to the signed-in user's email address.
+  ///
+  /// Supabase sends confirmation email(s) before the new address takes effect.
+  /// The redirect returns to this app so the callback handler can exchange the
+  /// confirmation code and refresh the signed-in user.
+  Future<void> updateEmail(String email) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    final validationError = Validators.email(normalizedEmail);
+    if (validationError != null) {
+      throw ArgumentError.value(email, 'email', validationError);
+    }
+
+    _debounceEmailRequest(normalizedEmail);
+    final attributes = UserAttributes(email: normalizedEmail);
+    final updateUser = _updateUser;
+    if (updateUser != null) {
+      await updateUser(
+        attributes,
+        emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
+      );
+      return;
+    }
+
+    await _client.auth.updateUser(
+      attributes,
+      emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
     );
   }
 
@@ -163,6 +213,17 @@ class AuthRepository {
   /// recovery link; callers must not invoke this from a normal sign-in flow.
   Future<void> updatePassword(String password) {
     return _client.auth.updateUser(UserAttributes(password: password));
+  }
+
+  /// Permanently deletes the current user and their server-side data.
+  ///
+  /// The Edge Function derives the user ID from the current JWT, deletes
+  /// storage objects, and then deletes the auth user so database cascades
+  /// remove all dependent records. The client only clears its local session
+  /// after the server confirms deletion.
+  Future<void> deleteAccount() async {
+    await _client.functions.invoke('delete-account');
+    await _client.auth.signOut(scope: SignOutScope.local);
   }
 
   // ── Activity tracking ────────────────────────────────────────────────
@@ -200,8 +261,27 @@ class AuthRepository {
 
   static String _sha256(String input) =>
       sha256.convert(utf8.encode(input)).toString();
+
+  /// Prevents rapid repeat requests for the same email address.
+  ///
+  /// The timestamp is recorded before calling Supabase so simultaneous taps
+  /// cannot pass the check while the first request is in flight.
+  static void _debounceEmailRequest(String email) {
+    final key = email.trim().toLowerCase();
+    final now = DateTime.now();
+    final lastRequest = _lastEmailRequests[key];
+    if (lastRequest != null) {
+      final elapsed = now.difference(lastRequest);
+      if (elapsed < _emailRequestCooldown) {
+        throw EmailRequestCooldownException(_emailRequestCooldown - elapsed);
+      }
+    }
+    _lastEmailRequests[key] = now;
+  }
 }
 
+typedef UpdateUserRequest =
+    Future<void> Function(UserAttributes attributes, {String? emailRedirectTo});
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {

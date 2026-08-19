@@ -21,7 +21,7 @@ class HomeScreen extends ConsumerWidget {
             .watch(currentUserModelProvider)
             .valueOrNull
             ?.displayFirstName ??
-        'there';
+        '';
     final avatarUrl = ref.watch(avatarUrlProvider).valueOrNull;
     return SafeArea(
       bottom: false,

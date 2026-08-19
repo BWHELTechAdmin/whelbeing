@@ -45,6 +45,8 @@ class PasswordRecoveryNotifier
       await ref.read(authRepositoryProvider).requestPasswordReset(email);
       state = state.copyWith(isComplete: true);
       return true;
+    } on EmailRequestCooldownException catch (e) {
+      state = state.copyWith(error: e.message);
     } on AuthException {
       state = state.copyWith(
         error: 'We could not send a reset link right now. Please try again.',

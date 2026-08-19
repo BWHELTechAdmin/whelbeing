@@ -35,6 +35,10 @@
 			</array>
 		</dict>
 	</array>
+	<!-- app_links delivers auth callbacks to Dart. Prevent Flutter from also
+	     treating a callback URL as a Navigator route such as "/?code=...". -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

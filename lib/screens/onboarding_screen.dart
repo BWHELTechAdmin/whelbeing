@@ -538,6 +538,11 @@ class _HealthProfileOnboardingState
                 _verificationPassword = null;
                 _step = _OnboardingStep.questions;
               }),
+              onBack: () => setState(() {
+                _verificationEmail = null;
+                _verificationPassword = null;
+                _step = _OnboardingStep.signUp;
+              }),
             ),
             _OnboardingStep.questions => _QuestionsPage(
               key: const ValueKey('questions'),
